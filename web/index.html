@@ -150,7 +150,7 @@
     for (const ext of info.extensions || []) {
       const tag = document.createElement('span');
       tag.className = 'tag';
-      const versions = ext.builds.map(b => b.version).filter(Boolean).join(', ');
+      const versions = [...new Set(ext.builds.map(b => b.version).filter(Boolean))].join(', ');
       tag.innerHTML = '<b>' + ext.name + '</b>' + (versions ? ' ' + versions : '');
       box.appendChild(tag);
     }
