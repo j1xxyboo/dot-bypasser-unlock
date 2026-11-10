@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 /*
- * Build the distributable ZIP of the unlocked Dot Bypasser extension.
+ * Build the distributable ZIP of an unlocked extension.
  *
  * Usage:
  *   node build_zip.js <extension-dir> [out.zip]
  *
- * The archive contains a single top-level `dot/` folder so it can be unpacked
- * and loaded with chrome://extensions -> Load unpacked -> dot/.
+ * The archive contains a single top-level folder so it can be unpacked and
+ * loaded with chrome://extensions -> Load unpacked -> <folder>/.
+ *
+ * The folder name inside the archive is derived from the extension itself
+ * ("dot" for Dot Bypasser, "asheo" for Asheo), so the instructions in the
+ * README stay valid for both.
  */
 const fs = require('fs');
 const path = require('path');
@@ -21,20 +25,30 @@ if (!fs.existsSync(path.join(TREE, 'manifest.json'))) {
 
 // sanity: manifest must parse and name the expected entry points
 const manifest = JSON.parse(fs.readFileSync(path.join(TREE, 'manifest.json'), 'utf8'));
-for (const f of [manifest.background.service_worker, ...manifest.content_scripts.flatMap(c => c.js)]) {
+const entryPoints = [
+  manifest.background && manifest.background.service_worker,
+  ...(manifest.content_scripts || []).flatMap((c) => c.js || []),
+].filter(Boolean);
+for (const f of entryPoints) {
   const p = path.join(TREE, f);
   if (!fs.existsSync(p)) throw new Error(`manifest references missing file: ${f}`);
 }
 
-// The archive always uses the folder name "dot", whatever the source dir is
-// called, so the instructions in the README stay valid.
-const STAGE = path.join(path.dirname(OUT), '.dot-zip-stage');
+/*
+ * The folder name inside the archive: "asheo" for Asheo, "dot" for Dot
+ * Bypasser, and the name of the source directory for anything else.
+ */
+const FOLDER = /asheo/i.test(manifest.name || '') ? 'asheo'
+  : /dot\s*bypasser/i.test(manifest.name || '') ? 'dot'
+  : path.basename(TREE);
+
+const STAGE = path.join(path.dirname(OUT), '.' + FOLDER + '-zip-stage');
 fs.rmSync(STAGE, { recursive: true, force: true });
 fs.mkdirSync(STAGE, { recursive: true });
-fs.cpSync(TREE, path.join(STAGE, 'dot'), { recursive: true });
+fs.cpSync(TREE, path.join(STAGE, FOLDER), { recursive: true });
 
 fs.rmSync(OUT, { force: true });
-execFileSync('zip', ['-r', '-q', '-9', OUT, 'dot'], { cwd: STAGE });
+execFileSync('zip', ['-r', '-q', '-9', OUT, FOLDER], { cwd: STAGE });
 fs.rmSync(STAGE, { recursive: true, force: true });
 
 const st = fs.statSync(OUT);

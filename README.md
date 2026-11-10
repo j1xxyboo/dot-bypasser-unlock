@@ -1,7 +1,8 @@
 # dot-bypasser-unlock
 
 Unlock the premium / locked features of the **Dot Bypasser** Chrome extension
-(MV3, v4.6.6) — the "bypass CVV on many payment gateways" tool.
+(MV3, v4.6.6) — the "bypass CVV on many payment gateways" tool — and of
+**Asheo** (MV3, v1.6.2).
 
 The extension ships as an obfuscated `javascript-obfuscator` bundle that gates
 features behind a license-server check. This repo contains the tooling that
@@ -12,9 +13,19 @@ anti-tamper mechanisms) actually work.
 > You supply the extension. This repo does **not** redistribute it — point the
 > tools at your own unpacked copy of the official release.
 
+**Two extensions, one repo:**
+
+| extension | patcher | quick start |
+|---|---|---|
+| **Dot Bypasser** 4.6.6 | `unlock_dot.js` + `tools/fix_guards.js` | [below](#quick-start) |
+| **Asheo** 1.6.2 | `tools/asheo_unlock.js` | [here](#unlocking-a-different-extension-asheo-162) |
+
+Both can also be done from a browser, without a terminal: see
+[Patch it from a browser](#patch-it-from-a-browser-no-terminal).
+
 ---
 
-## Quick start
+## Quick start (Dot Bypasser)
 
 ```bash
 # 1. get the official extension and unpack it into ./dot
@@ -355,16 +366,111 @@ HOST=0.0.0.0 PORT=80 node web/patch-server.js
 ## Unlocking a different extension (Asheo 1.6.2)
 
 The same idea works for other extensions. Asheo (also an MV3 extension, also
-obfuscated, also with a signed build attestation) is unlocked with
+obfuscated, also with a signed build attestation) is patched with
+`tools/asheo_unlock.js`.
+
+### Quick start
 
 ```bash
-node tools/asheo_unlock.js ../asheo-latest
+# 1. get the official extension and unpack it into ./asheo
+#    (Chrome Web Store -> "Asheo" -> download, then unzip it;
+#     the result must contain manifest.json at the top level)
+
+# 2. patch it
+node tools/asheo_unlock.js asheo
+
+# 3. package it
+node build_zip.js asheo asheo-unlocked.zip
+
+# 4. install
+#    chrome://extensions -> Developer mode -> Load unpacked -> select ./asheo
+#    (or unzip asheo-unlocked.zip and load the asheo/ folder inside it)
 ```
+
+Requirements: **Node 18+** (for the patcher) and `zip` + `sha256sum`
+(for packaging). No npm dependencies for the patch itself.
+
+There is **no step 3 equivalent** here: unlike Dot Bypasser, Asheo's
+obfuscator does not use self-defending guards, so nothing has to be
+recomputed after the edit. The patch sites are independent of each other and
+of their own file hashes.
+
+The patcher prints what it did:
+
+```
+Asheo unlock
+target: /path/to/asheo
+build     : 1.6.2 (version 1.6.2)
+manifest  : 3e907f8f27e8771b6c11eb32e713afc0bc1951239f26e44e2e040b6eee7d9030
+[1/2] premium gates (7 sites)
+  *  functions/premium-gate.js: 1x "export async function can(feature){"
+  *  functions/premium-gate.js: 1x "export async function require(feature){"
+  *  functions/premium-gate.js: 1x "export async function getEntitlement(){"
+  *  functions/premium-gate.js: 1x "return{[getVerifiedEntitlement(0xd7)]:{},[getVerifiedEntitle"
+  *  functions/license-client.js: 1x "export const getLicenseStatus=_getLicenseStatus;"
+  *  functions/background.js: 18x "getCachedVerifiedEntitlement()[CAPABILITY_KEYS(X3IuxQW[0x2cd"
+  *  functions/build-attest.js: 1x "      if (got !== want) return permanentFail('file-modified"
+[2/2] worker response patch
+  *  functions/background.js: response patch injected
+done.
+```
+
+If it says *"This tree is not an Asheo build the patcher knows"*, the copy is
+not the official release (the patcher checks the vendor's signature over the
+build manifest) or it is a release that needs a new profile - see below.
+
+### What "unlocked" means, measured
+
+Driving the extension's own popup in headless Chrome - loading the extension
+unpacked, dismissing the disclaimer, then switching the premium toggles on:
+
+| metric | stock | unlocked |
+|---|---|---|
+| popup banner | *Free tier - enter your license key* | **Premium active - all features unlocked.** |
+| payment rules | 45/45 | **45/45** |
+| `{action:"browsermod.setEnabled"}` | `{success:false, reason:"premium_required", message:"This is a premium feature."}` | **`{success:true, config:{enabled:true, ...}}`** |
+| "Enable persona" pill | stays **Off** | **On** (and stays on after a reload) |
+| `{action:"entitlement.refresh"}` | tier "free" | **tier "premium"** |
+| runtime messages left unanswered | – | **none** |
+
+Reproduce it yourself:
+
+```bash
+npm install                              # pulls puppeteer
+node harness/asheo.js ./asheo            # -> PAYMENT RULES 45/45, "Premium active"
+node harness/asheo.js ./asheo-patched    # -> the same, plus the premium banner
+node harness/asheo_feature.js ./asheo-patched   # -> all seven toggles "ok"
+```
+
+### The patch sites live in a profile
 
 The patch sites live in `tools/asheo_profiles.json`, one entry per known
 build, and the right one is picked by the digest of the signed manifest -
 the same thing the web service uses to tell an official release from a
 tampered upload. A new release needs a new entry there.
+
+The reason is that the obfuscator re-randomises its string tables with every
+release, so the text that has to be patched changes:
+
+```json
+{
+  "name": "1.6.2",
+  "version": "1.6.2",
+  "manifestHash": "3e907f8f27e8771b6c11eb32e713afc0bc1951239f26e44e2e040b6eee7d9030",
+  "patches": [
+    {
+      "file": "functions/background.js",
+      "label": "the worker's own premium checks",
+      "find": "getCachedVerifiedEntitlement()[CAPABILITY_KEYS(X3IuxQW[0x2cd])](()=>{return X3IuxQW[0x22]})",
+      "replace": "__asheoLocalEntitlement()",
+      "count": 18
+    }
+  ]
+}
+```
+
+`manifestHash` is the sha256 of the release's signed `build-hashes.json`, so
+a profile can only ever be applied to the exact build it was found in.
 
 Asheo gates the premium tier in **three** places, not one. All of them have
 to go, otherwise a feature is unlocked in the list but refuses to switch on:
@@ -463,13 +569,13 @@ only the per-file hash comparison has to go. The signature check stays, the
 digest the extension reports to the vendor's server is still the genuine one,
 and the extension does not notice the modification.
 
-Verification:
+### Verification
 
 ```bash
-node harness/asheo.js ../asheo-latest        # before
-node harness/asheo.js ../asheo-patched        # after -> "Premium active - all features unlocked."
-node harness/asheo_trace.js ../asheo-patched  # the premium.get answer
-node harness/asheo_feature.js ../asheo-patched  # click every premium toggle
+node harness/asheo.js ./asheo              # before -> PAYMENT RULES 45/45, no premium banner
+node harness/asheo.js ./asheo-patched      # after  -> "Premium active - all features unlocked."
+node harness/asheo_trace.js ./asheo-patched     # the premium.get answer
+node harness/asheo_feature.js ./asheo-patched   # click every premium toggle
 ```
 
 `asheo_feature.js` clicks the toggles of the premium panel and prints what the
@@ -503,11 +609,22 @@ The dashboard reads `PAYMENT RULES 45/45` and `Premium active - all features
 unlocked.` at the same time - the rule pack still comes from the vendor's
 server, the premium tier is local.
 
+### If something goes wrong
+
+| what you see | what it means |
+|---|---|
+| `This tree is not an Asheo build the patcher knows.` | the copy is not the official release (the vendor's signature over the build manifest does not verify), or it is a release that needs a new profile in `tools/asheo_profiles.json` |
+| `expected 1 occurrence(s), found N` | the release changed its obfuscation - the patch site in the profile is stale |
+| `nothing to do (already patched?)` | the tree is patched already; running the patcher twice is harmless |
+| the popup shows the premium banner but a toggle stays "Off" | the worker refused the feature - read the worker's answer with `node harness/asheo_feature.js ./asheo-patched` |
+| `No payment rules found.` | the *server facing* state was faked as well; the cached entitlement has to stay the real (free tier) one, see "What is deliberately not patched" above |
+| `Timeout: entitlement.refresh` | the activation token was faked; it has to stay the real one |
+
 ## Repo layout
 
 ```
 unlock_dot.js            the patcher: premium edits + anti-tamper prelude
-build_zip.js              packages an extension tree into dot-unlocked.zip
+build_zip.js              packages an extension tree into a distributable zip
 UNLOCK_NOTES.md           full technical write-up (gate, guards, nag)
 
 web/
@@ -561,6 +678,14 @@ harness/                  puppeteer verification (headless Chrome)
 - `unlock_dot.js` verifies the expected occurrence count of every edit and
   aborts if it does not match, so a version bump fails loudly instead of
   silently producing a half-patched tree.
+- `tools/asheo_unlock.js` does the same, and additionally refuses a tree
+  whose signed build manifest does not verify against the vendor's key - so
+  a patch site can only ever be applied to the build it was found in.
+- The Asheo patch is **local only**. The vendor's server is still contacted
+  and its rule pack still downloaded; only the extension's own premium
+  checks are answered locally. Features whose value comes from the server
+  (for example the Adyen test-card injection) still need a valid license on
+  the vendor's side.
 
 ---
 

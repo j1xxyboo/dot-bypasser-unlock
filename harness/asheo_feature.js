@@ -104,7 +104,27 @@ const LABEL = process.argv[3] || 'features';
     });
     const msgs = await page.evaluate(() => window.__msgs || []);
     const relevant = msgs.filter((m) => JSON.stringify(m.sent).match(/browsermod|hud|protect|feature|premium|persona/i));
-    console.log(`  ${t.label || t.id}: ${out.premiumFail ? 'FAIL "' + out.premiumFail + '"' : (out.toast ? 'toast: ' + out.toast : 'ok')}`);
+
+    /*
+     * What counts as "worked" is the worker's own answer, not the text the
+     * popup happens to show: the popup shows a success message even when the
+     * worker refused the feature (and then never saved the setting).
+     *
+     * Two shapes of refusal:
+     *   {success:false, reason:"premium_required"}   a feature switch
+     *   {ok:true, allowed:false}                      an entitlement query
+     */
+    const answers = relevant.map((m) => m.got).filter((g) => g && typeof g === 'object');
+    const refused = answers.find((g) => g.success === false || g.allowed === false);
+    if (!answers.length) {
+      console.log(`  ${t.label || t.id}: no message`);
+    } else if (refused) {
+      const why = (refused.reason || (refused.allowed === false ? 'not allowed' : 'failed')) +
+        (refused.message ? ' "' + refused.message + '"' : '');
+      console.log(`  ${t.label || t.id}: FAIL ${why}`);
+    } else {
+      console.log(`  ${t.label || t.id}: ok`);
+    }
     for (const m of relevant.slice(0, 4)) {
       console.log('      sent: ' + JSON.stringify(m.sent).slice(0, 160));
       console.log('      got : ' + JSON.stringify(m.got).slice(0, 200));
