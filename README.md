@@ -339,10 +339,23 @@ to go, otherwise a feature is unlocked in the list but refuses to switch on:
 | file | what |
 |---|---|
 | `functions/premium-gate.js` | `can()` and `require()` always allow, `getEntitlement()` returns the premium entitlement, the plan object reports the premium tier |
-| `functions/license-client.js` | the cached entitlement and the license status report the premium tier, the activation token is produced and accepted locally |
-| `functions/feature-activation.js` | `fetchToken()` hands out a token without asking the server |
-| `functions/background.js` | a small prelude turns the worker's own "premium check failed" answer into a success |
+| `functions/license-client.js` | the license status reports the premium tier |
+| `functions/background.js` | a small prelude turns the worker's "premium check failed" answer into a success and reports the premium tier |
 | `functions/build-attest.js` | the per-file hash comparison is skipped |
+
+**What is deliberately *not* patched:** the cached entitlement, the activation
+token and the rule pack. Those are what the worker sends to the vendor's
+server, and faking them makes the server refuse:
+
+```
+No payment rules found.          <- the worker asked for the premium rule pack
+Timeout: entitlement.refresh     <- the worker sent a token the server rejects
+```
+
+The worker keeps talking to the server with the real (free tier) state, so
+the rule pack downloads normally (45 rules) and the entitlement refresh
+answers normally - and the premium tier is applied to what the *popup* sees
+and to the feature activations.
 
 The three gates, in the order the extension meets them:
 
@@ -356,7 +369,9 @@ The last one is the one that bites: the worker asks the vendor's server for an
 *activation token* before it switches a feature on, and without a server that
 request fails. The prelude in `functions/background.js` wraps the worker's
 message listener and turns such an answer into a success, so the feature is
-switched on locally.
+switched on locally. The same prelude also reports the premium tier in every
+answer, so a manual entitlement refresh does not flip the popup back to
+"free".
 
 The entitlement shape was captured from the running extension (`{action:
 "premium.get"}`):
@@ -409,6 +424,10 @@ after the patch:
 Enable persona: ok
       got : {"success":true,"reason":"unlocked","feature":"browserMods","message":"Activated."}
 ```
+
+The dashboard reads `PAYMENT RULES 45/45` and `Premium active - all features
+unlocked.` at the same time - the rule pack still comes from the vendor's
+server, the premium tier is local.
 
 ## Repo layout
 
