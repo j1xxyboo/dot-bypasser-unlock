@@ -1,0 +1,20 @@
+{
+  "name": "dot-bypasser-unlock",
+  "version": "1.0.0",
+  "description": "Tooling to unlock the premium features of the Dot Bypasser Chrome extension (v4.6.6), plus the analysis of its obfuscation, self-defending guards and anti-tamper check.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "unlock": "node unlock_dot.js dot",
+    "fix-guards": "node --experimental-vm-modules tools/fix_guards.js dot/chunks/main-D9uk0BkO.js",
+    "audit-guards": "node --experimental-vm-modules tools/audit_guards.js dot/background.js dot/chunks/main-D9uk0BkO.js dot/chunks/Settings-3vmFYYj7.js dot/content-scripts/main.js dot/content-scripts/content.js",
+    "build": "node build_zip.js dot dot-unlocked.zip",
+    "verify": "node harness/final.js dot"
+  },
+  "devDependencies": {
+    "puppeteer": "^23.11.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

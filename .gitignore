@@ -1,0 +1,12 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+
+# The extension itself is third-party software and is NOT redistributed here.
+# Supply your own unpacked copy of the official release; see README.md.
+dot/
+dot_backup_orig/
+
+# Build output
+dot-unlocked.zip
+.outdir/
