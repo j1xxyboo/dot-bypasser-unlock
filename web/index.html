@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot Bypasser &mdash; patcher</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --line: #262b36;
+    --text: #e7e9ee;
+    --muted: #98a0b0;
+    --accent: #8b5cf6;
+    --ok: #34d399;
+    --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; justify-content: center; padding: 32px 16px 64px;
+  }
+  .wrap { width: 100%; max-width: 760px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 18px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+
+  #drop {
+    border: 2px dashed #39404f; border-radius: 12px; padding: 42px 20px; text-align: center;
+    cursor: pointer; transition: .15s; background: #12151b;
+  }
+  #drop:hover, #drop.over { border-color: var(--accent); background: #191d27; }
+  #drop .big { font-size: 17px; margin-bottom: 6px; }
+  #drop .small { color: var(--muted); font-size: 14px; }
+  #file { display: none; }
+
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 10px;
+    padding: 13px 22px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 16px;
+  }
+  button:disabled { opacity: .55; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  .row input[type=text] {
+    flex: 1 1 320px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
+    background: #10131a; color: var(--text); font-size: 15px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .status { margin-top: 18px; padding: 14px 16px; border-radius: 10px; background: #10131a; border: 1px solid var(--line); display: none; white-space: pre-wrap; font-size: 14px; }
+  .status.show { display: block; }
+  .status.ok { border-color: #1f6f4f; color: var(--ok); }
+  .status.bad { border-color: #7f2d2d; color: var(--bad); }
+  .status.busy { color: var(--muted); }
+
+  ol { margin: 8px 0 0; padding-left: 22px; }
+  ol li { margin: 6px 0; }
+  code { background: #10131a; border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  a { color: var(--accent); }
+  .foot { color: var(--muted); font-size: 13px; margin-top: 26px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Dot Bypasser patcher</h1>
+  <p class="sub">Drop in the official extension file and get the patched version back. No commands, no terminal.</p>
+
+  <div class="card">
+    <h2>1 &mdash; choose the file</h2>
+    <div id="drop">
+      <div class="big">Drop the extension file here</div>
+      <div class="small">or click to choose &mdash; <code>.zip</code> or <code>.crx</code> of Dot Bypasser 4.6.6</div>
+      <div class="small" style="margin-top:8px">Have an unpacked folder? Right click it &rarr; <b>Compress to ZIP</b> first.</div>
+    </div>
+    <input type="file" id="file" accept=".zip,.crx,application/zip,application/x-chrome-extension">
+    <div class="row">
+      <button id="go" disabled>Patch it</button>
+      <span id="picked" style="color:var(--muted)"></span>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="card">
+    <h2>2 &mdash; install the patched extension</h2>
+    <ol>
+      <li>Unzip the downloaded file (you get a folder called <code>dot</code>).</li>
+      <li>Open <code>chrome://extensions</code> in Chrome.</li>
+      <li>Turn on <b>Developer mode</b> (top right).</li>
+      <li>Click <b>Load unpacked</b> and select the <code>dot</code> folder.</li>
+      <li>Pin the extension and click its icon &mdash; the premium features are unlocked.</li>
+    </ol>
+  </div>
+
+  <p class="foot">
+    Only the official release is accepted &mdash; the service checks every file against its
+    checksum before touching it. Nothing is stored; the file is patched in a temporary
+    folder and deleted right afterwards.
+  </p>
+</div>
+
+<script>
+  const drop = document.getElementById('drop');
+  const fileInput = document.getElementById('file');
+  const go = document.getElementById('go');
+  const picked = document.getElementById('picked');
+  const status = document.getElementById('status');
+  let file = null;
+
+  function show(kind, text) {
+    status.className = 'status show ' + kind;
+    status.textContent = text;
+  }
+
+  function choose(f) {
+    if (!f) return;
+    file = f;
+    picked.textContent = f.name + '  (' + Math.round(f.size / 1024 / 1024 * 10) / 10 + ' MB)';
+    go.disabled = false;
+    status.className = 'status';
+  }
+
+  drop.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => choose(fileInput.files[0]));
+
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.add('over');
+  }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.remove('over');
+  }));
+  drop.addEventListener('drop', e => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) choose(f);
+  });
+
+  go.addEventListener('click', async () => {
+    if (!file) return;
+    go.disabled = true;
+    show('busy', 'Uploading and patching, this takes a few seconds ...');
+
+    try {
+      const res = await fetch('/api/patch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Filename': encodeURIComponent(file.name),
+        },
+        body: file,
+      });
+
+      const type = res.headers.get('content-type') || '';
+      if (!res.ok || !type.includes('application/zip')) {
+        let msg = 'Something went wrong.';
+        try {
+          const j = await res.json();
+          msg = j.error || msg;
+          if (j.details && j.details.length) msg += '\n\n' + j.details.slice(0, 6).join('\n');
+          if (j.hint) msg += '\n\n' + j.hint;
+        } catch (e) { /* keep the generic message */ }
+        show('bad', msg);
+        go.disabled = false;
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'dot-bypasser-unlocked.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+
+      show('ok', 'Done! The patched extension is downloading.\n\nUnzip it and load the "dot" folder through chrome://extensions -> Load unpacked.');
+    } catch (e) {
+      show('bad', 'Upload failed: ' + e.message);
+    }
+    go.disabled = false;
+  });
+</script>
+</body>
+</html>

@@ -206,12 +206,66 @@ Two details make this work and are easy to get wrong:
 
 ---
 
+## Patch it from a browser (no terminal)
+
+`web/` is a tiny website around the patcher: somebody who has never opened a
+terminal drops the official extension on the page and gets the patched file
+back.
+
+```bash
+npm install          # only needed for the optional browser check
+npm run web          # -> http://localhost:8787
+```
+
+The page takes a `.zip` or a `.crx` of Dot Bypasser 4.6.6, patches it and
+hands the result back as `dot-bypasser-unlocked.zip`. The page also explains
+how to load it in Chrome, because that is the part people get stuck on.
+
+```
+   ┌──────────────┐   upload    ┌──────────────────┐
+   │  the browser │ ──────────► │  patch-server.js │
+   │   (the UI)   │             │  unpack_dot.js   │
+   └──────────────┘             │  fix_guards.js   │
+          ▲                     └──────────────────┘
+          │   download                 │
+          └───────────────────────────┘
+                dot-bypasser-unlocked.zip
+```
+
+**Only the official release is accepted.** Repairing the obfuscator's
+self-defending guards means *evaluating* the uploaded JavaScript, so an
+unchecked upload would be remote code execution. The service therefore
+compares every file of the upload with the sha256 list in
+`web/official-files.json` and refuses anything else with a clear message.
+
+```
+node web/test.js      # the whole chain: upload -> patch -> load in Chrome
+```
+
+The test uploads the official extension as a `.zip` and as a `.crx`, checks
+that the returned archive carries the patched files, and loads it in headless
+Chrome to confirm it really is unlocked (0 lock icons, premium badge, no
+"Unofficial Source" modal).
+
+To offer it to others, put it behind a reverse proxy with TLS:
+
+```bash
+HOST=0.0.0.0 PORT=80 node web/patch-server.js
+```
+
 ## Repo layout
 
 ```
 unlock_dot.js            the patcher: premium edits + anti-tamper prelude
 build_zip.js              packages an extension tree into dot-unlocked.zip
 UNLOCK_NOTES.md           full technical write-up (gate, guards, nag)
+
+web/
+  patch-server.js         the patch website (upload -> patched download)
+  index.html              its page
+  lib/zip.js              dependency free zip reader/writer
+  official-files.json     sha256 of the official release (upload validation)
+  test.js                 end to end test, including a real Chrome check
 
 tools/
   fix_guards.js           recompute + rewrite self-defending guard constants
