@@ -50,6 +50,24 @@ function patch(file, find, replace, expected = 1) {
   return true;
 }
 
+/** replace every occurrence of `find` */
+function patchAll(file, find, replace) {
+  const p = path.join(ROOT, file);
+  if (!fs.existsSync(p)) {
+    console.log('  !  missing: ' + file);
+    return false;
+  }
+  const src = fs.readFileSync(p, 'utf8');
+  const count = src.split(find).length - 1;
+  if (count === 0) {
+    console.log('  -  ' + file + ': nothing to do (already patched?)');
+    return false;
+  }
+  fs.writeFileSync(p, src.split(find).join(replace));
+  console.log('  *  ' + file + ': ' + count + 'x ' + JSON.stringify(find.slice(0, 60)));
+  return true;
+}
+
 console.log('Asheo unlock');
 console.log('target:', ROOT);
 
@@ -57,9 +75,68 @@ console.log('[1/3] premium gate');
 patch('functions/premium-gate.js',
   'export async function can(feature){',
   'export async function can(feature){return true;');
+/*
+ * require() is the gate the worker asks before it switches a feature on.
+ * Its real answer is an object: {ok:false, reason:"premium_required"} when
+ * the feature is not allowed and {ok:true} when it is. Returning the bare
+ * boolean `true` makes the worker read `ok` as undefined and treat the
+ * answer as a failure ("Premium check failed. Try again."), so the shape
+ * has to be kept.
+ */
 patch('functions/premium-gate.js',
   'export async function require(feature){',
-  'export async function require(feature){return true;');
+  'export async function require(feature){return {ok:true,reason:"unlocked"};');
+
+/*
+ * The second half of the gate lives in the worker itself (background.js).
+ * After premiumGate.require() says ok, the worker reads the *cached
+ * verified entitlement* and refuses the feature unless its tier is
+ * literally "premium" and the feature flag is on:
+ *
+ *   const ent = await getCachedVerifiedEntitlement().catch(()=>null);
+ *   if(!ent || ent.tier!=="premium" || ent.features.browserMods!==true){
+ *       answer({success:false, reason:"premium_required",
+ *               message:"This is a premium feature."}); return; }
+ *
+ * Without a license on file that getter returns null, so every premium
+ * feature is refused and the worker returns *before* it saves the setting
+ * - which is why the toggle stayed off even though the popup was told
+ * "Browser modifications enabled".
+ *
+ * Only the *local* gate is answered with the premium entitlement. The
+ * getter itself is NOT patched: the worker also sends that value to the
+ * vendor's server (the rule pack request asks for the premium pack when
+ * the tier is "premium", and the server refuses it without a license on
+ * file), so faking it there would leave the extension with no payment
+ * rules at all.
+ *
+ * The local sites are exactly the ones that read the entitlement with a
+ * .catch() - "await getCachedVerifiedEntitlement().catch(()=>null)" - so
+ * that is what is replaced.
+ */
+const ENTITLEMENT = [
+  '{',
+  'tier:"premium",source:"license",isFounder:true,',
+  'features:{browserMods:true,ruleOpsLab:true,liveHud:true,',
+  'advancedProtection:true,apiAccess:true,experimentalFeatures:true},',
+  'capabilities:{customEncryptedGateways:true,binGenerator:true,adyenGateway:true},',
+  'limits:{binPool:9999,ccQueue:9999,ruleLimit:99999,profileLimit:999,randomRouting:true},',
+  'expiresAt:null,plan:"premium",planDisplayName:"Premium",licenseType:"premium",',
+  'status:"active",activatedAt:Date.now(),nextBillingDate:null,',
+  'seatsAllowed:999,seatsUsed:0,activationCount:1,maxActivations:null,',
+  'deviceLocked:false,canTransfer:true,',
+  'featureKeys:["browserMods","ruleOpsLab","liveHud","advancedProtection",',
+  '"apiAccess","experimentalFeatures"],customFeatures:{},',
+  'capabilityKeys:["customEncryptedGateways","binGenerator"],',
+  'limitKeys:["binPool","ccQueue","ruleLimit","profileLimit","randomRouting"],',
+  'metadata:{},kid:null,kind:"license",keyName:null,jti:"unlocked",activated:true',
+  '}',
+].join('');
+
+patchAll('functions/background.js',
+  'getCachedVerifiedEntitlement()[CAPABILITY_KEYS(X3IuxQW[0x2cd])](()=>{return X3IuxQW[0x22]})',
+  '__asheoLocalEntitlement()');
+
 
 console.log('[2/3] entitlement');
 /*
@@ -138,13 +215,14 @@ patch('functions/license-client.js',
  * Switching a feature on does not only ask for the entitlement, it also asks
  * for an *activation token* from the vendor's server (feature-activation.js).
  * Without a server that request fails and the extension answers
- * "Premium check failed. Try again.".
+ * "Premium check failed. Try again." - and the worker never gets to *save*
+ * the setting, so the toggle stays off even though the answer said so.
  *
  * The token itself is NOT faked here: the real token is what the extension
  * sends to the vendor's server for the rule pack and the entitlement
  * refresh, and faking it broke both ("No payment rules found", "Timeout:
- * entitlement.refresh"). The activation is solved one level up instead - see
- * the response patch in functions/background.js.
+ * entitlement.refresh"). The activation is solved one level up instead - the
+ * worker's own premium checks (see above) and the response patch below.
  */
 
 console.log('[3/3] build attestation');
@@ -166,10 +244,32 @@ console.log('[4/4] worker response patch');
  * answer is turned into a success - the feature is switched on locally.
  */
 const PRELUDE = `
+/*
+ * patch: the worker's own premium checks see a premium entitlement.
+ *
+ * The worker asks for the cached verified entitlement with
+ *
+ *     await getCachedVerifiedEntitlement().catch(()=>null)
+ *
+ * and refuses the feature unless the tier is "premium" and the feature
+ * flag is on. Without a license that getter yields null, the worker
+ * answers "This is a premium feature." and returns *before* it saves the
+ * setting - so the toggle stayed off.
+ *
+ * Only these local reads are answered with the premium entitlement. The
+ * getter itself is left alone: the worker also sends that value to the
+ * vendor's server, and a "premium" tier there makes the server refuse the
+ * premium rule pack.
+ */
+function __asheoLocalEntitlement() {
+  return ` + ENTITLEMENT + `;
+}
+
 /* patch: premium activations are answered locally */
 ;(function () {
   try {
     var PREMIUM = ` + PREMIUM + `;
+
     var om = chrome.runtime.onMessage;
     var orig = om.addListener.bind(om);
     om.addListener = function (fn, ...rest) {

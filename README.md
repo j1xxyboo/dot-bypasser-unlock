@@ -340,12 +340,12 @@ to go, otherwise a feature is unlocked in the list but refuses to switch on:
 |---|---|
 | `functions/premium-gate.js` | `can()` and `require()` always allow, `getEntitlement()` returns the premium entitlement, the plan object reports the premium tier |
 | `functions/license-client.js` | the license status reports the premium tier |
-| `functions/background.js` | a small prelude turns the worker's "premium check failed" answer into a success and reports the premium tier |
+| `functions/background.js` | the worker's own premium checks see a premium entitlement; a small prelude reports the premium tier in every answer |
 | `functions/build-attest.js` | the per-file hash comparison is skipped |
 
-**What is deliberately *not* patched:** the cached entitlement, the activation
-token and the rule pack. Those are what the worker sends to the vendor's
-server, and faking them makes the server refuse:
+**What is deliberately *not* patched:** the cached entitlement that the
+worker sends to the vendor's server, and the activation token. Those are
+what the server sees, and faking them makes the server refuse:
 
 ```
 No payment rules found.          <- the worker asked for the premium rule pack
@@ -365,13 +365,42 @@ The three gates, in the order the extension meets them:
 | the activation | `{action:"browsermod.setEnabled"}` -> `{success:false, reason:"premium_required", message:"This is a premium feature."}` |
 | the activation token | the same action -> `{success:false, reason:"activation_failed", message:"Premium check failed. Try again."}` |
 
-The last one is the one that bites: the worker asks the vendor's server for an
-*activation token* before it switches a feature on, and without a server that
-request fails. The prelude in `functions/background.js` wraps the worker's
-message listener and turns such an answer into a success, so the feature is
-switched on locally. The same prelude also reports the premium tier in every
-answer, so a manual entitlement refresh does not flip the popup back to
-"free".
+### Why the toggle stayed on "Off"
+
+The popup said "Browser modifications enabled" but the pill stayed on
+"Off". Two different gates were in the way, and both live in the worker:
+
+1. `premiumGate.require()` answers with an *object*
+   (`{ok:false, reason:"premium_required"}`), not a boolean. Patching it to
+   the bare `true` makes the worker read `ok` as `undefined` and treat the
+   answer as a failure.
+2. after `require()` says ok, the worker reads the cached verified
+   entitlement and refuses the feature unless `ent.tier === "premium"` and
+   the feature flag is on:
+
+   ```js
+   const ent = await getCachedVerifiedEntitlement().catch(()=>null);
+   if (!ent || ent.tier !== "premium" || ent.features.browserMods !== true) {
+     answer({success:false, reason:"premium_required",
+             message:"This is a premium feature."});
+     return;                       // <-- returns BEFORE the setting is saved
+   }
+   ```
+
+   Without a license on file that getter yields `null`, so the worker
+   answers "This is a premium feature." and returns before it saves the
+   setting. The popup ignored that failure and showed the success message,
+   which is why it looked like it had worked.
+
+The fix answers the *local* read - the 18 sites that use the
+`.catch(()=>null)` form - with a premium entitlement, and leaves the getter
+itself alone. The getter is also what the worker sends to the server: a
+"premium" tier there makes the server refuse the premium rule pack and the
+extension ends up with no payment rules at all.
+
+The prelude in `functions/background.js` additionally reports the premium
+tier in every answer, so a manual entitlement refresh does not flip the
+popup back to "free".
 
 The entitlement shape was captured from the running extension (`{action:
 "premium.get"}`):
@@ -425,6 +454,18 @@ Enable persona: ok
       got : {"success":true,"reason":"unlocked","feature":"browserMods","message":"Activated."}
 ```
 
+And the setting actually sticks - the pill goes "Off" -> "On" and stays
+there across a reload of the popup:
+
+```
+pill: Off -> On | after reload: On
+getState.enabled = true
+asheo.browsermod.config.v1  {"enabled":true, ...}
+asheo.hud.enabled.v1        true
+PAYMENT RULES 45/45
+Premium active - all features unlocked.
+```
+
 The dashboard reads `PAYMENT RULES 45/45` and `Premium active - all features
 unlocked.` at the same time - the rule pack still comes from the vendor's
 server, the premium tier is local.
@@ -445,6 +486,7 @@ web/
 
 tools/
   asheo_unlock.js         unlock the premium tier of the Asheo extension
+  decode_strings.mjs      decode an obfuscated module's string table
   fix_guards.js           recompute + rewrite self-defending guard constants
   audit_guards.js         verify every guard constant in a tree
   emit_patches.js         find the premium gate of any build (new profiles)
