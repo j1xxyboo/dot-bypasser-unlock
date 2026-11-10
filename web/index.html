@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dot Bypasser &mdash; patcher</title>
+<title>Extension patcher &mdash; Dot Bypasser &amp; Asheo</title>
 <link rel="icon" href="data:,">
 <style>
   :root {
@@ -54,6 +54,13 @@
   .status.bad { border-color: #7f2d2d; color: var(--bad); }
   .status.busy { color: var(--muted); }
 
+  .tags { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 20px; }
+  .tag {
+    font-size: 13px; padding: 5px 11px; border-radius: 999px;
+    background: #12151b; border: 1px solid var(--line); color: var(--muted);
+  }
+  .tag b { color: var(--text); font-weight: 600; }
+
   ol { margin: 8px 0 0; padding-left: 22px; }
   ol li { margin: 6px 0; }
   code { background: #10131a; border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
@@ -63,14 +70,16 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Dot Bypasser patcher</h1>
+  <h1>Extension patcher</h1>
   <p class="sub">Drop in the official extension file and get the patched version back. No commands, no terminal.</p>
+
+  <div class="tags" id="tags"></div>
 
   <div class="card">
     <h2>1 &mdash; choose the file</h2>
     <div id="drop">
       <div class="big">Drop the extension file here</div>
-      <div class="small">or click to choose &mdash; <code>.zip</code> or <code>.crx</code> of Dot Bypasser 4.6.6</div>
+      <div class="small">or click to choose &mdash; <code>.zip</code> or <code>.crx</code></div>
       <div class="small" style="margin-top:8px">Have an unpacked folder? Right click it &rarr; <b>Compress to ZIP</b> first.</div>
     </div>
     <input type="file" id="file" accept=".zip,.crx,application/zip,application/x-chrome-extension">
@@ -84,18 +93,18 @@
   <div class="card">
     <h2>2 &mdash; install the patched extension</h2>
     <ol>
-      <li>Unzip the downloaded file (you get a folder called <code>dot</code>).</li>
+      <li>Unzip the downloaded file.</li>
       <li>Open <code>chrome://extensions</code> in Chrome.</li>
       <li>Turn on <b>Developer mode</b> (top right).</li>
-      <li>Click <b>Load unpacked</b> and select the <code>dot</code> folder.</li>
+      <li>Click <b>Load unpacked</b> and select the folder you just unzipped.</li>
       <li>Pin the extension and click its icon &mdash; the premium features are unlocked.</li>
     </ol>
   </div>
 
   <p class="foot">
-    Only the official release is accepted &mdash; the service checks every file against its
-    checksum before touching it. Nothing is stored; the file is patched in a temporary
-    folder and deleted right afterwards.
+    Only the official release is accepted &mdash; the service checks the file against the
+    vendor's own signed manifest before touching it. Nothing is stored; the file is patched
+    in a temporary folder and deleted right afterwards.
   </p>
 </div>
 
@@ -134,6 +143,19 @@
     if (f) choose(f);
   });
 
+  /* which extensions this service knows */
+  fetch('/api/info').then(r => r.json()).then(info => {
+    const box = document.getElementById('tags');
+    box.innerHTML = '';
+    for (const ext of info.extensions || []) {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      const versions = ext.builds.map(b => b.version).filter(Boolean).join(', ');
+      tag.innerHTML = '<b>' + ext.name + '</b>' + (versions ? ' ' + versions : '');
+      box.appendChild(tag);
+    }
+  }).catch(() => {});
+
   go.addEventListener('click', async () => {
     if (!file) return;
     go.disabled = true;
@@ -163,17 +185,23 @@
         return;
       }
 
+      /* the server names the file after the extension it patched */
+      let name = 'extension-unlocked.zip';
+      const disp = res.headers.get('content-disposition') || '';
+      const m = /filename="([^"]+)"/.exec(disp);
+      if (m) name = m[1];
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'dot-bypasser-unlocked.zip';
+      a.download = name;
       document.body.appendChild(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 30000);
 
-      show('ok', 'Done! The patched extension is downloading.\n\nUnzip it and load the "dot" folder through chrome://extensions -> Load unpacked.');
+      show('ok', 'Done! The patched extension is downloading.\n\nUnzip it and load the folder through chrome://extensions -> Load unpacked.');
     } catch (e) {
       show('bad', 'Upload failed: ' + e.message);
     }

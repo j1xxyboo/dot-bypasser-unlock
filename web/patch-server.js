@@ -2,10 +2,10 @@
 'use strict';
 /*
  * ============================================================================
- *  Dot Bypasser patcher — web service
+ *  Extension patcher — web service
  * ============================================================================
  *
- *  A small website where somebody who has never seen a terminal can patch the
+ *  A small website where somebody who has never seen a terminal can patch an
  *  extension:
  *
  *      1. open the page
@@ -13,21 +13,30 @@
  *      3. press "Patch it"
  *      4. download the patched .zip and load it in Chrome
  *
- *  The service does exactly what the command line does:
+ *  Two extensions are supported:
  *
- *      node unlock_dot.js <tree>
- *      node --experimental-vm-modules tools/fix_guards.js <tree>/chunks/main-D9uk0BkO.js
+ *      Dot Bypasser   node unlock_dot.js <tree>
+ *                     node --experimental-vm-modules tools/fix_guards.js <tree>
+ *      Asheo          node tools/asheo_unlock.js <tree>
  *
- *  and hands the result back as a zip.
+ *  and the result is handed back as a zip.
  *
  *  ---------------------------------------------------------------------------
  *  WHY THE UPLOAD IS CHECKED AGAINST THE KNOWN BUILDS
  *  ---------------------------------------------------------------------------
  *  Repairing the obfuscator's self-defending guards means *evaluating* the
  *  uploaded JavaScript. So an unchecked upload would be remote code
- *  execution. The service therefore only accepts a Dot Bypasser build it
- *  knows: every known build has a profile (tools/profiles.json) with the
- *  patch sites of that build, and the upload has to match one of them.
+ *  execution. The service therefore only accepts a build it knows:
+ *
+ *  - Dot Bypasser: every known build has a profile (tools/profiles.json) with
+ *    the patch sites of that build, and the upload has to match one of them.
+ *  - Asheo: the build ships a *signed* manifest (build-hashes.json +
+ *    build-hashes.sig, ES256). The service verifies that signature against
+ *    the vendor's public key and checks every file against the signed
+ *    manifest, which proves the upload is the genuine release - and the
+ *    digest of that manifest says which build it is, so the right profile
+ *    (tools/asheo_profiles.json) is used.
+ *
  *  Anything else is rejected with a clear message.
  *
  *  ---------------------------------------------------------------------------
@@ -61,6 +70,9 @@ const TIMEOUT = Number(process.env.TIMEOUT || 180) * 1000;
 
 const { load: loadProfiles, pickProfile } = require('../tools/profiles.js');
 const PROFILES = loadProfiles();
+
+const asheo = require('../tools/asheo_profiles.js');
+const ASHEO_PROFILES = asheo.load();
 
 /* ------------------------------------------------------------------ utils */
 
@@ -118,60 +130,94 @@ function run(cmd, args, cwd, timeoutMs) {
 /* ------------------------------------------------------------- validation */
 
 /**
- * Which known build is this upload?
+ * Which extension is this upload, and which known build is it?
  *
  * The obfuscator re-randomises its string tables with every release, so the
  * patch sites differ per build. Every known build has a profile, and the
  * profile that matches decides whether the upload can be patched.
  *
- * @returns {{profile: object|null, problems: string[]}}
+ * @returns {Promise<{kind: 'dot'|'asheo'|null, profile: object|null,
+ *                     problems: string[]}>}
  */
-function identify(files) {
+async function identify(files) {
   const problems = [];
   if (!files.has('manifest.json')) {
-    return { profile: null, problems: ['the archive has no manifest.json - it is not an unpacked extension'] };
+    return { kind: null, profile: null, problems: ['the archive has no manifest.json - it is not an unpacked extension'] };
   }
   let manifest = {};
   try {
     manifest = JSON.parse(files.get('manifest.json').toString('utf8'));
   } catch (e) {
-    return { profile: null, problems: ['the manifest.json in the archive is not valid JSON'] };
+    return { kind: null, profile: null, problems: ['the manifest.json in the archive is not valid JSON'] };
   }
-  if (!/dot\s*bypasser/i.test(String(manifest.name || ''))) {
-    problems.push(`the archive is "${manifest.name}", not Dot Bypasser`);
-  }
+  const name = String(manifest.name || '');
   if (!manifest.background || !manifest.background.service_worker) {
     problems.push('the manifest has no service worker - this is not the browser extension');
   }
-  if (problems.length) return { profile: null, problems };
 
-  // write the tree out so the profile can be matched against it
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-ident-'));
-  try {
-    for (const [name, data] of files) {
-      const dest = path.join(tmp, zip.safeName(name));
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.writeFileSync(dest, data);
+  if (/dot\s*bypasser/i.test(name)) {
+    if (problems.length) return { kind: null, profile: null, problems };
+    // write the tree out so the profile can be matched against it
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-ident-'));
+    try {
+      for (const [name2, data] of files) {
+        const dest = path.join(tmp, zip.safeName(name2));
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, data);
+      }
+      const profile = pickProfile(tmp);
+      if (!profile) {
+        problems.push('this build of Dot Bypasser is not known to the patcher yet');
+        return { kind: null, profile: null, problems };
+      }
+      return { kind: 'dot', profile, problems: [] };
+    } catch (e) {
+      // an unsafe file name in the archive
+      return { kind: null, profile: null, problems: [e.message] };
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
     }
-    const profile = pickProfile(tmp);
-    if (!profile) {
-      problems.push('this build of Dot Bypasser is not known to the patcher yet');
-      return { profile: null, problems };
-    }
-    return { profile, problems: [] };
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
   }
+
+  if (/asheo/i.test(name)) {
+    // Asheo ships a signed manifest: the signature proves it is the vendor's
+    // and the file digests prove the files are the ones it shipped.
+    const read = (n) => files.get(n);
+    read.all = () => [...files.keys()];
+    const v = await asheo.verifyOfficial(read);
+    if (!v.ok) {
+      problems.push(...v.problems);
+      return { kind: null, profile: null, problems };
+    }
+    const profile = asheo.pickProfile(v.manifestHash);
+    if (!profile) {
+      problems.push(`Asheo ${v.version || 'this build'} is not known to the patcher yet`);
+      return { kind: null, profile: null, problems };
+    }
+    return { kind: 'asheo', profile, problems: [] };
+  }
+
+  problems.push(`the archive is "${name}" - only Dot Bypasser and Asheo are supported`);
+  return { kind: null, profile: null, problems };
 }
 
 /* ----------------------------------------------------------------- patch */
 
 /**
  * Patch an unpacked tree in place.
+ * @param {string} tree the directory
+ * @param {'dot'|'asheo'} kind which extension it is
  * @returns {Promise<string>} the log of the patch run
  */
-async function patchTree(tree) {
+async function patchTree(tree, kind) {
   const log = [];
+
+  if (kind === 'asheo') {
+    const unlock = await run(process.execPath, [path.join(ROOT, 'tools', 'asheo_unlock.js'), tree], ROOT, TIMEOUT);
+    log.push(unlock.out.trim());
+    return log.join('\n');
+  }
+
   const unlock = await run(process.execPath, [path.join(ROOT, 'unlock_dot.js'), tree], ROOT, TIMEOUT);
   log.push(unlock.out.trim());
 
@@ -199,8 +245,8 @@ async function handlePatch(req, res) {
   }
   if (!upload.length) return sendJson(res, 400, { error: 'no file uploaded' });
 
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-patch-'));
-  const tree = path.join(tmp, 'dot');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ext-patch-'));
+  const tree = path.join(tmp, 'ext');
   try {
     // 1. unpack
     let files;
@@ -211,19 +257,24 @@ async function handlePatch(req, res) {
     }
     if (!files.size) return sendJson(res, 400, { error: 'the archive is empty' });
 
-    // 2. which build is it? (the patch sites differ per build)
-    const { profile, problems } = identify(files);
-    if (!profile) {
+    // 2. which extension and which build is it? (the patch sites differ per build)
+    const { kind, profile, problems } = await identify(files);
+    if (!kind || !profile) {
       return sendJson(res, 422, {
-        error: 'This file is not a Dot Bypasser build the patcher knows.',
+        error: 'This file is not a build the patcher knows.',
         details: problems.slice(0, 12),
-        hint: 'Download the newest Dot Bypasser from the official release page and upload that file.',
+        hint: 'Download the newest release from the official page and upload that file.',
       });
     }
 
     // 3. unpack to disk
     for (const [name, data] of files) {
-      const safe = zip.safeName(name);
+      let safe;
+      try {
+        safe = zip.safeName(name);
+      } catch (e) {
+        return sendJson(res, 400, { error: e.message });
+      }
       const dest = path.join(tree, safe);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, data);
@@ -232,7 +283,7 @@ async function handlePatch(req, res) {
     // 4. patch
     let log;
     try {
-      log = await patchTree(tree);
+      log = await patchTree(tree, kind);
     } catch (e) {
       return sendJson(res, 500, { error: 'patching failed: ' + e.message.split('\n')[0], log: e.message });
     }
@@ -249,7 +300,8 @@ async function handlePatch(req, res) {
     walk(tree);
     const archive = zip.writeZip(out);
 
-    const name = `dot-bypasser-${profile.version || 'unlocked'}-unlocked.zip`;
+    const slug = kind === 'asheo' ? 'asheo' : 'dot-bypasser';
+    const name = `${slug}-${profile.version || 'unlocked'}-unlocked.zip`;
     send(res, 200, 'application/zip', archive, {
       'Content-Disposition': `attachment; filename="${name}"`,
       'X-Patch-Log': encodeURIComponent(log.slice(0, 2000)),
@@ -279,7 +331,18 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/info') {
       return sendJson(res, 200, {
-        builds: PROFILES.map((p) => ({ name: p.name, version: p.version })),
+        extensions: [
+          {
+            id: 'dot-bypasser',
+            name: 'Dot Bypasser',
+            builds: PROFILES.map((p) => ({ name: p.name, version: p.version })),
+          },
+          {
+            id: 'asheo',
+            name: 'Asheo',
+            builds: ASHEO_PROFILES.map((p) => ({ name: p.name, version: p.version })),
+          },
+        ],
         maxUploadMB: MAX_UPLOAD / 1024 / 1024,
       });
     }
@@ -291,9 +354,11 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log('Dot Bypasser patcher');
+  console.log('Extension patcher');
   console.log('  open  http://' + (HOST === '0.0.0.0' ? 'localhost' : HOST) + ':' + PORT);
-  console.log('  accepts ' + PROFILES.map((p) => p.name).join(', ') + ' (.zip or .crx)');
+  console.log('  accepts Dot Bypasser (' + PROFILES.map((p) => p.name).join(', ') + ')');
+  console.log('          and Asheo (' + ASHEO_PROFILES.map((p) => p.name).join(', ') + ')');
+  console.log('  (.zip or .crx)');
 });
 
 module.exports = server;

@@ -293,21 +293,47 @@ hands the result back as `dot-bypasser-unlocked.zip`. The page also explains
 how to load it in Chrome, because that is the part people get stuck on.
 
 ```
-   ┌──────────────┐   upload    ┌──────────────────┐
-   │  the browser │ ──────────► │  patch-server.js │
-   │   (the UI)   │             │  unpack_dot.js   │
-   └──────────────┘             │  fix_guards.js   │
-          ▲                     └──────────────────┘
-          │   download                 │
-          └───────────────────────────┘
-                dot-bypasser-unlocked.zip
+   ┌──────────────┐   upload    ┌──────────────────────┐
+   │  the browser │ ──────────► │    patch-server.js   │
+   │   (the UI)   │             │                      │
+   └──────────────┘             │  unlock_dot.js      │  Dot Bypasser
+          ▲                     │  fix_guards.js      │
+          │   download          │                      │
+          │                     │  asheo_unlock.js    │  Asheo
+          │                     └──────────────────────┘
+          └───────────────────────────┬──────────────────┘
+                          dot-bypasser-unlocked.zip
+                          asheo-1.6.2-unlocked.zip
 ```
+
+The page handles both extensions: drop in a Dot Bypasser or an Asheo file and
+the patched version comes back, named after the extension it patched.
 
 **Only the official release is accepted.** Repairing the obfuscator's
 self-defending guards means *evaluating* the uploaded JavaScript, so an
-unchecked upload would be remote code execution. The service therefore
-compares every file of the upload with the sha256 list in
-`web/official-files.json` and refuses anything else with a clear message.
+unchecked upload would be remote code execution. The service therefore only
+accepts a build it knows:
+
+- **Dot Bypasser** &mdash; every known build has a profile
+  (`tools/profiles.json`) with the patch sites of that build, and the upload
+  has to match one of them.
+- **Asheo** &mdash; the extension ships a *signed* manifest
+  (`build-hashes.json` + `build-hashes.sig`, ES256). The service verifies
+  that signature against the vendor's public key and checks every file
+  against the signed manifest, which proves the upload is the genuine
+  release. The digest of that manifest also says which build it is, so the
+  right profile (`tools/asheo_profiles.json`) is used.
+
+Anything else is refused with a clear message:
+
+```
+$ curl -s --data-binary @tampered.zip http://localhost:8787/api/patch
+{
+  "error": "This file is not a build the patcher knows.",
+  "details": ["1 file(s) do not match the signed manifest"],
+  "hint": "Download the newest release from the official page and upload that file."
+}
+```
 
 ```
 node web/test.js      # the whole chain: upload -> patch -> load in Chrome
@@ -316,7 +342,9 @@ node web/test.js      # the whole chain: upload -> patch -> load in Chrome
 The test uploads the official extension as a `.zip` and as a `.crx`, checks
 that the returned archive carries the patched files, and loads it in headless
 Chrome to confirm it really is unlocked (0 lock icons, premium badge, no
-"Unofficial Source" modal).
+"Unofficial Source" modal). The Asheo path is tested the same way: the
+patched build has to show the premium tier, load its 45 payment rules and
+keep a premium toggle switched on across a reload.
 
 To offer it to others, put it behind a reverse proxy with TLS:
 
@@ -332,6 +360,11 @@ obfuscated, also with a signed build attestation) is unlocked with
 ```bash
 node tools/asheo_unlock.js ../asheo-latest
 ```
+
+The patch sites live in `tools/asheo_profiles.json`, one entry per known
+build, and the right one is picked by the digest of the signed manifest -
+the same thing the web service uses to tell an official release from a
+tampered upload. A new release needs a new entry there.
 
 Asheo gates the premium tier in **three** places, not one. All of them have
 to go, otherwise a feature is unlocked in the list but refuses to switch on:
@@ -486,6 +519,9 @@ web/
 
 tools/
   asheo_unlock.js         unlock the premium tier of the Asheo extension
+  asheo_profiles.json     the known Asheo builds and their patch sites
+  asheo_profiles.js       verify an Asheo upload against its signed manifest
+  asheo_payload.js        the premium entitlement the patched build reports
   decode_strings.mjs      decode an obfuscated module's string table
   fix_guards.js           recompute + rewrite self-defending guard constants
   audit_guards.js         verify every guard constant in a tree

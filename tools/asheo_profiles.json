@@ -1,0 +1,62 @@
+{
+  "_comment": "Known Asheo builds. The obfuscator re-randomises its string tables with every release, so the patch sites differ per build. Each profile is identified by the digest of the signed manifest (build-hashes.json), which the web service verifies against the vendor's ES256 signature - so a profile can only be used with the exact build it was made for.",
+  "profiles": [
+    {
+      "name": "1.6.2",
+      "version": "1.6.2",
+      "manifestHash": "3e907f8f27e8771b6c11eb32e713afc0bc1951239f26e44e2e040b6eee7d9030",
+      "patches": [
+        {
+          "file": "functions/premium-gate.js",
+          "label": "can()",
+          "find": "export async function can(feature){",
+          "replace": "export async function can(feature){return true;",
+          "count": 1
+        },
+        {
+          "file": "functions/premium-gate.js",
+          "label": "require()",
+          "find": "export async function require(feature){",
+          "replace": "export async function require(feature){return {ok:true,reason:\"unlocked\"};",
+          "count": 1
+        },
+        {
+          "file": "functions/premium-gate.js",
+          "label": "getEntitlement()",
+          "find": "export async function getEntitlement(){",
+          "replace": "export async function getEntitlement(){return __ASHEO_PREMIUM__;",
+          "count": 1
+        },
+        {
+          "file": "functions/premium-gate.js",
+          "label": "getPlan() tier",
+          "find": "return{[getVerifiedEntitlement(0xd7)]:{},[getVerifiedEntitlement(0xd8)]:{},[getVerifiedEntitlement(0xd9)]:getVerifiedEntitlement(0xda)}}",
+          "replace": "return{[getVerifiedEntitlement(0xd7)]:{},[getVerifiedEntitlement(0xd8)]:{},[getVerifiedEntitlement(0xd9)]:\"premium\",kind:\"premium\",plan:\"premium\",planDisplayName:\"Premium\",tier:\"premium\",licenseType:\"premium\",status:\"active\",seat:null,seats:null}}",
+          "count": 1
+        },
+        {
+          "file": "functions/license-client.js",
+          "label": "getLicenseStatus()",
+          "find": "export const getLicenseStatus=_getLicenseStatus;",
+          "replace": "export const getLicenseStatus=()=>({at:Date.now(),error:null,ok:true,plan:\"premium\",planDisplayName:\"Premium\",seat:null,seats:null,tier:\"premium\"});",
+          "count": 1
+        },
+        {
+          "file": "functions/background.js",
+          "label": "the worker's own premium checks",
+          "find": "getCachedVerifiedEntitlement()[CAPABILITY_KEYS(X3IuxQW[0x2cd])](()=>{return X3IuxQW[0x22]})",
+          "replace": "__asheoLocalEntitlement()",
+          "count": 18
+        },
+        {
+          "file": "functions/build-attest.js",
+          "label": "the per-file hash comparison",
+          "find": "      if (got !== want) return permanentFail('file-modified', p);",
+          "replace": "      if (got !== want) { /* patch: the per-file hash check is skipped */ }",
+          "count": 1
+        }
+      ],
+      "prelude": "functions/background.js"
+    }
+  ]
+}
