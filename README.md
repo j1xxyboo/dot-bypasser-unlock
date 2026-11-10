@@ -333,13 +333,30 @@ obfuscated, also with a signed build attestation) is unlocked with
 node tools/asheo_unlock.js ../asheo-latest
 ```
 
-It patches three things:
+Asheo gates the premium tier in **three** places, not one. All of them have
+to go, otherwise a feature is unlocked in the list but refuses to switch on:
 
 | file | what |
 |---|---|
 | `functions/premium-gate.js` | `can()` and `require()` always allow, `getEntitlement()` returns the premium entitlement, the plan object reports the premium tier |
-| `functions/license-client.js` | the license status reports the premium tier |
+| `functions/license-client.js` | the cached entitlement and the license status report the premium tier, the activation token is produced and accepted locally |
+| `functions/feature-activation.js` | `fetchToken()` hands out a token without asking the server |
+| `functions/background.js` | a small prelude turns the worker's own "premium check failed" answer into a success |
 | `functions/build-attest.js` | the per-file hash comparison is skipped |
+
+The three gates, in the order the extension meets them:
+
+| gate | how it shows up |
+|---|---|
+| the entitlement | `{action:"entitlement.can"}` -> `{allowed:false}` |
+| the activation | `{action:"browsermod.setEnabled"}` -> `{success:false, reason:"premium_required", message:"This is a premium feature."}` |
+| the activation token | the same action -> `{success:false, reason:"activation_failed", message:"Premium check failed. Try again."}` |
+
+The last one is the one that bites: the worker asks the vendor's server for an
+*activation token* before it switches a feature on, and without a server that
+request fails. The prelude in `functions/background.js` wraps the worker's
+message listener and turns such an answer into a success, so the feature is
+switched on locally.
 
 The entitlement shape was captured from the running extension (`{action:
 "premium.get"}`):
@@ -375,6 +392,22 @@ Verification:
 node harness/asheo.js ../asheo-latest        # before
 node harness/asheo.js ../asheo-patched        # after -> "Premium active - all features unlocked."
 node harness/asheo_trace.js ../asheo-patched  # the premium.get answer
+node harness/asheo_feature.js ../asheo-patched  # click every premium toggle
+```
+
+`asheo_feature.js` clicks the toggles of the premium panel and prints what the
+worker answers - before the patch:
+
+```
+Enable persona: FAIL "Premium check failed. Try again."
+      got : {"success":false,"reason":"activation_failed","feature":"browserMods",...}
+```
+
+after the patch:
+
+```
+Enable persona: ok
+      got : {"success":true,"reason":"unlocked","feature":"browserMods","message":"Activated."}
 ```
 
 ## Repo layout

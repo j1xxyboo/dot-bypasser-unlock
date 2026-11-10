@@ -113,14 +113,51 @@ patch('functions/premium-gate.js',
   'seat:null,seats:null}}');
 
 /*
- * The "status" the popup shows next to the entitlement comes from
- * getLicenseStatus() (license-client.js). It reports the cached license state
- * of the vendor's server, so it is switched over as well.
+ * The license status the popup shows comes from getLicenseStatus()
+ * (license-client.js). It reports the cached license state of the vendor's
+ * server, so it is switched over as well.
  */
 patch('functions/license-client.js',
   'export const getLicenseStatus=_getLicenseStatus;',
   'export const getLicenseStatus=()=>({at:Date.now(),error:null,ok:true,plan:"premium",' +
   'planDisplayName:"Premium",seat:null,seats:null,tier:"premium"});');
+
+/*
+ * ...and the *cached* entitlement is what the background asks when a feature
+ * is switched on ("Premium check failed"). It is read from
+ * chrome.storage.local["asheo.license.cache.v1"], so the getter is replaced
+ * with one that hands out the premium entitlement. The proxy answers every
+ * method the background calls on it with "allowed".
+ */
+patch('functions/license-client.js',
+  'export const getCachedVerifiedEntitlement=_getCachedVerifiedEntitlement;',
+  'export const getCachedVerifiedEntitlement=()=>new Proxy(' + PREMIUM + ',' +
+  '{get:(t,p)=>{return (p in t?t[p]:(()=>true));}});');
+
+/*
+ * Switching a feature on does not only ask for the entitlement, it also asks
+ * for an *activation token* from the vendor's server (feature-activation.js)
+ * and verifies that token (license-client.js). Without a server the token
+ * request fails and the extension answers "Premium check failed. Try again.".
+ *
+ * So the token is produced locally and the verification accepts it.
+ */
+patch('functions/license-client.js',
+  'export const verifyEntitlementToken=_verifyEntitlementToken;',
+  'export const verifyEntitlementToken=async()=>({ok:true,valid:true,feature:"*",' +
+  'exp:Date.now()+86400000,iat:Date.now()});');
+patch('functions/license-client.js',
+  'export const isWithinGrace=_isWithinGrace;',
+  'export const isWithinGrace=()=>true;');
+patch('functions/license-client.js',
+  'export const isTokenUsable=_isTokenUsable;',
+  'export const isTokenUsable=()=>true;');
+patch('functions/license-client.js',
+  'export const getCachedToken=_getCachedToken;',
+  'export const getCachedToken=()=>"unlocked-token";');
+patch('functions/feature-activation.js',
+  'export async function fetchToken(feature){',
+  'export async function fetchToken(feature){return "unlocked-token";');
 
 console.log('[3/3] build attestation');
 // The signature check over build-hashes.json stays; only the per-file hash
@@ -128,5 +165,57 @@ console.log('[3/3] build attestation');
 patch('functions/build-attest.js',
   "      if (got !== want) return permanentFail('file-modified', p);",
   '      if (got !== want) { /* patch: the per-file hash check is skipped */ }');
+
+console.log('[4/4] worker response patch');
+/*
+ * Switching a premium feature on asks the worker to *activate* it: the worker
+ * requests an activation token from the vendor's server and answers
+ *
+ *   { success:false, reason:"activation_failed",
+ *     message:"Premium check failed. Try again." }
+ *
+ * when that request cannot be made. The listener is wrapped so that such an
+ * answer is turned into a success - the feature is switched on locally.
+ */
+const PRELUDE = `
+/* patch: premium activations are answered locally */
+;(function () {
+  try {
+    var om = chrome.runtime.onMessage;
+    var orig = om.addListener.bind(om);
+    om.addListener = function (fn, ...rest) {
+      var wrapped = function (msg, sender, sendResponse) {
+        var patched = function (res) {
+          try {
+            if (res && typeof res === 'object' && res.success === false &&
+                (res.reason === 'activation_failed' || res.reason === 'premium_required')) {
+              res = Object.assign({}, res, {
+                success: true, reason: 'unlocked', message: 'Activated.', detail: null,
+              });
+            }
+          } catch (e) {}
+          return sendResponse(res);
+        };
+        return fn(msg, sender, patched);
+      };
+      return orig(wrapped, ...rest);
+    };
+  } catch (e) {}
+})();
+`;
+{
+  const p = path.join(ROOT, 'functions/background.js');
+  if (fs.existsSync(p)) {
+    const src = fs.readFileSync(p, 'utf8');
+    if (!src.includes('patch: premium activations are answered locally')) {
+      fs.writeFileSync(p, PRELUDE + src);
+      console.log('  *  functions/background.js: response patch injected');
+    } else {
+      console.log('  -  functions/background.js: response patch already present');
+    }
+  } else {
+    console.log('  !  functions/background.js not found');
+  }
+}
 
 console.log('done.');
