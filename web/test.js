@@ -117,12 +117,27 @@ function makeCrx(zipBuffer) {
     const bg = out.get('background.js') ? out.get('background.js').toString() : '';
     check('background.js carries the anti-tamper prelude',
       bg.includes('/*__DOTBYPASS_PRELUDE_START__*/'), bg.slice(0, 80));
-    check('background.js has the forced premium flag',
-      bg.includes('[q_7LT1h(mIno9Zz[0x870])+q_7LT1h(mIno9Zz[0x871])]:!0'), 'premium patch missing');
 
-    const chunk = out.get('chunks/main-D9uk0BkO.js') ? out.get('chunks/main-D9uk0BkO.js').toString() : '';
-    check('the repaired guard constant is in the main chunk',
-      chunk.includes('8138264842955113'), 'guard constant missing');
+    // every patch site of the build profile has to be applied
+    const profile = require('../tools/profiles.js').pickProfile(ext);
+    check('the upload matches a known build', !!profile, 'no profile matched');
+    if (profile) {
+      let applied = 0;
+      let missing = [];
+      for (const site of profile.patches) {
+        const text = out.get(site.file) ? out.get(site.file).toString() : '';
+        const replaced = text.split(site.replace).length - 1;
+        const original = text.split(site.find).length - 1;
+        // background.js keeps the original pattern once, inside the prelude's
+        // revert map (that is how the integrity probe still sees the official
+        // bytes); every other file must not contain it any more
+        const ok = text.includes(site.replace) &&
+          (site.file === 'background.js' ? original === 1 : original === 0);
+        if (ok) applied++;
+        else missing.push(site.file + ' ' + site.label + ' (replaced=' + replaced + ' original=' + original + ')');
+      }
+      check('all ' + profile.patches.length + ' patch sites are applied', applied === profile.patches.length, missing);
+    }
 
     check('the manifest is untouched',
       out.get('manifest.json') && out.get('manifest.json').equals(files.get('manifest.json')), 'manifest changed');

@@ -137,10 +137,12 @@ Additional checks:
 ```bash
 # dot/ = your unpacked copy of the official release
 node unlock_dot.js dot                                    # premium + anti-tamper prelude
-node --experimental-vm-modules tools/fix_guards.js \
-     dot/chunks/main-D9uk0BkO.js                          # repair the self-defending guard
+node --experimental-vm-modules tools/fix_guards.js dot      # repair the self-defending guard
 node build_zip.js dot dot-unlocked.zip
 ```
+
+`fix_guards.js` takes the folder and finds the app chunk itself - its name
+changes with every build.
 
 `unlock_dot.js` is self-contained: it applies the 10 premium edits and injects
 the anti-tamper neutraliser.
@@ -152,6 +154,8 @@ the anti-tamper neutraliser.
 | path | role |
 |---|---|
 | `unlock_dot.js` | premium patcher + anti-tamper neutraliser |
+| `tools/profiles.json` | the known builds and their patch sites |
+| `tools/emit_patches.js` | finds the patch sites of a build that is not known yet |
 | `build_zip.js` | packages an extension tree into the ZIP |
 | `tools/` | guard repair/audit, string-table dumping, probe verification |
 | `harness/` | headless-Chrome verification of the patched extension |
@@ -172,6 +176,42 @@ path to a copy of the official release and modifies it in place.
 | `cfg.js` | extract the embedded hash-algorithm configuration |
 | `probecheck.sh` | verify the anti-tamper probe sees the official bytes |
 | `harness/` | puppeteer harness: render check, DOM dump, guard audit, per-tab lock/disabled census |
+
+### The patch sites change with every build
+
+The obfuscator re-randomises its string tables with every release, so the
+*text* of the premium gate is different in every build. Two builds that are
+both called "4.6.6":
+
+| release | app chunk | premium comparison |
+|---|---|---|
+| older build | `chunks/main-D9uk0BkO.js` | `Bdwbpn8<1.1||!UdZOaAF[0x4]` |
+| 2026-10-27 | `chunks/main-2cPWhpKU.js` | `PVOAlPM<1.1||!ffbbgXt[0x4]` |
+
+The *shape* is always the same - a comparison against the threshold 1.1 with
+an always-false `!1` tail - so the sites can be found by their meaning:
+
+1. the file has one decoder function and one index table (both are found by
+   how often they are used),
+2. the index table is read straight out of the source (it is an array of
+   numbers and short strings),
+3. the string table is decoded by the file's own decoder (in a VM, with the
+   browser APIs stubbed),
+4. the property whose key decodes to `isPremium`, the comparisons against
+   1.1 and the `premium: 10` fallback are located.
+
+`tools/emit_patches.js` does that and writes the result as a build profile
+into `tools/profiles.json`. `unlock_dot.js` picks the profile that matches
+the tree, so one patcher covers every known release.
+
+Two details that are easy to get wrong:
+
+- the decoder is **not idempotent** (it replaces the encoded string with the
+  decoded one), so every index has to be decoded exactly once,
+- the key of a computed property is a mix of decoded strings and raw table
+  entries (`DEC(TABLE[0x23e]) + TABLE[0x95]`), and both kinds have to be
+  decoded to recognise the property.
+
 
 ---
 

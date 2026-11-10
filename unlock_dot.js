@@ -80,79 +80,23 @@ const path = require('path');
  */
 const ROOT = path.resolve(process.argv[2] || 'dot');
 
-/* Forced-true replacements. `!0` === true.
+/*
+ * The patch sites.
  *
- * IMPORTANT: every `replace` string must stay unique inside its file, because
- * the anti-tamper neutraliser reverses these exact edits to rebuild the
- * pristine official bytes. So the unique left-hand side is kept and only the
- * always-false `|| !ONE` tail is neutralised. */
-const PATCHES = [
-  {
-    file: 'background.js',
-    // const fG6cU6 = { ["isPremium"]: !mIno9Zz[0x3], ... }   (mIno9Zz[0x3] === 1 -> false)
-    find: '[q_7LT1h(mIno9Zz[0x870])+q_7LT1h(mIno9Zz[0x871])]:!mIno9Zz[0x3]',
-    replace: '[q_7LT1h(mIno9Zz[0x870])+q_7LT1h(mIno9Zz[0x871])]:!0',
-  },
-  {
-    file: 'background.js',
-    // EUWdi4(): state.isPremium = premium < 1.1 || !mIno9Zz[0x3]
-    find: ']=s7wPzlV<mIno9Zz[0x874]||!mIno9Zz[0x3]}',
-    replace: ']=s7wPzlV<mIno9Zz[0x874]||!0}',
-  },
-  {
-    file: 'content-scripts/main.js',
-    // SbOnXf[...].isPremium = premium < 1.1 || !ZRc3uM[0x3]
-    find: '=Z6xg7it<1.1||!ZRc3uM[0x3]}',
-    replace: '=Z6xg7it<1.1||!0}',
-  },
-  {
-    file: 'content-scripts/content.js',
-    // BeU25HX[...].isPremium = premium < 1.1 || !U6epo37[0x3]
-    find: '=Kg6FMg2<U6epo37[0x3c1]||!U6epo37[0x3]}',
-    replace: '=Kg6FMg2<U6epo37[0x3c1]||!0}',
-  },
-  {
-    file: 'content-scripts/content.js',
-    // od9dIn[...].isPremium = premium < 1.1 || !U6epo37[0x3]
-    find: '=qFSNyY<U6epo37[0x3c1]||!U6epo37[0x3]}',
-    replace: '=qFSNyY<U6epo37[0x3c1]||!0}',
-  },
-  {
-    file: 'chunks/main-D9uk0BkO.js',
-    // lr.value = premium < 1.1 || !UdZOaAF[0x4]   (popup / options UI premium ref)
-    find: '=Bdwbpn8<1.1||!UdZOaAF[0x4]}',
-    replace: '=Bdwbpn8<1.1||!0}',
-  },
-  {
-    file: 'chunks/main-D9uk0BkO.js',
-    // lr.value = false  ->  lr.value = true   (no-response fallback path)
-    find: 'lr[NF0xd1l(UdZOaAF[0x79b])]=!UdZOaAF[0x4];return}',
-    replace: 'lr[NF0xd1l(UdZOaAF[0x79b])]=!0;return}',
-  },
-  {
-    file: 'chunks/Settings-3vmFYYj7.js',
-    // Tp4VdA.value = premium < 1.1 || !ix2qAS[0x4]   (settings premium ref)
-    find: '=__Uint8Array<1.1||!ix2qAS[0x4]',
-    replace: '=__Uint8Array<1.1||!0',
-  },
-];
-
-/* Fallback "premium" numeric value 10 -> 0 so that any *numeric* premium read
- * (not just the boolean) also reports a premium-tier value. */
-const VALUE_PATCHES = [
-  {
-    file: 'background.js',
-    // cj9O5Q() no-license / invalid-license return: { premium: 10, reason: ... }
-    find: 'mIno9Zz[0x2b7])+mIno9Zz[0x113]]:mIno9Zz[0x16d]',
-    replace: 'mIno9Zz[0x2b7])+mIno9Zz[0x113]]:0',
-  },
-  {
-    file: 'background.js',
-    // cj9O5Q() error path: { [im74KS(...)]: 10, reason: ... }
-    find: 'im74KS(mIno9Zz[0x2d2])+mIno9Zz[0x113]]:mIno9Zz[0x16d]',
-    replace: 'im74KS(mIno9Zz[0x2d2])+mIno9Zz[0x113]]:0',
-  },
-];
+ * The obfuscator re-randomises its string tables with every build, so the
+ * sites are different in every release. They are therefore kept as *profiles*
+ * (tools/profiles.json), one per known build, and the right one is picked by
+ * looking at the files in the tree.
+ *
+ * A new profile is created with:
+ *
+ *     node --experimental-vm-modules tools/emit_patches.js <extension-dir> \
+ *          --save "<name>"
+ *
+ * which finds the sites by decoding the string tables of the build.
+ */
+const { load: loadProfiles, profileMatches, pickProfile } = require('./tools/profiles.js');
+const PROFILES = loadProfiles();
 
 /* ---------------------------------------------------------------------------
  * The anti-tamper probe prelude.
@@ -241,32 +185,26 @@ function apply(file, find, replace, expected) {
  * Everything the patcher changes, in one list, so that tools/inspect.js can
  * report on it without duplicating the patterns.
  */
-const PATCH_SITES = [
-  ...PATCHES.map((p) => ({ ...p, label: 'premium flag' })),
-  ...VALUE_PATCHES.map((p) => ({ ...p, label: 'premium fallback' })),
-];
-
 /* ------------------------------------------------------------------ main */
 
 function main() {
-  console.log('Dot Bypasser v4.6.6 - unlocking premium / locked features');
+  console.log('Dot Bypasser - unlocking premium / locked features');
   console.log('target:', ROOT);
 
-  // A tree that was patched before is not an error - say so and stop.
+  // a tree that was patched before is not an error - say so and stop
   {
     const bgFile = path.join(ROOT, 'background.js');
     if (!fs.existsSync(path.join(ROOT, 'manifest.json')) || !fs.existsSync(bgFile)) {
       throw new Error(
         'there is no unpacked extension in ' + ROOT +
         ' (manifest.json and background.js are missing).\n' +
-        '  Extract the extension first, so that you get a folder with manifest.json in it,\n' +
+        '  Extract the archive first, so that you get a folder with manifest.json in it,\n' +
         '  and point the patcher at that folder.'
       );
     }
     const bg = fs.readFileSync(bgFile, 'utf8');
-    const hasPrelude = bg.includes(START);
-    const hasPatch = bg.includes(PATCHES[0].replace);
-    if (hasPrelude && hasPatch) {
+    if (bg.includes(START)) {
+      // the prelude is only ever added by this patcher
       console.log('');
       console.log('This tree is already patched.');
       console.log('  Load the "' + path.basename(ROOT) + '" folder in Chrome, or start from a fresh');
@@ -277,18 +215,29 @@ function main() {
     }
   }
 
-  console.log('[1/4] premium comparison sites');
-  for (const p of PATCHES) apply(p.file, p.find, p.replace, 1);
+  const profile = pickProfile(ROOT);
+  if (!profile) {
+    throw new Error(
+      'this build of the extension is not known to the patcher.\n' +
+      '  The premium gate moved, so the patch sites have to be found again:\n' +
+      '    node --experimental-vm-modules tools/emit_patches.js ' + ROOT + ' --save "<name>"\n' +
+      '  and add the result to tools/profiles.json.'
+    );
+  }
 
-  console.log('[2/4] premium fallback values');
-  for (const p of VALUE_PATCHES) apply(p.file, p.find, p.replace, 1);
+  console.log('build     : ' + profile.name + (profile.version ? ' (version ' + profile.version + ')' : ''));
+  console.log('app chunk : ' + (profile.appChunk || '(unknown)'));
+  console.log('[1/3] premium gate (' + profile.patches.length + ' sites)');
+  for (const site of profile.patches) {
+    apply(site.file, site.find, site.replace, 1);
+  }
 
-  console.log('[3/4] anti-tamper probe neutraliser');
+  console.log('[2/3] anti-tamper probe neutraliser');
   {
     // revert map: file -> list of [patched, original]
     const revertMap = {};
-    for (const p of [...PATCHES, ...VALUE_PATCHES]) {
-      (revertMap[p.file] = revertMap[p.file] || []).push([p.replace, p.find]);
+    for (const site of profile.patches) {
+      (revertMap[site.file] = revertMap[site.file] || []).push([site.replace, site.find]);
     }
     const p = path.join(ROOT, 'background.js');
     let src = fs.readFileSync(p, 'utf8');
@@ -302,11 +251,10 @@ function main() {
     console.log('  injected probe neutraliser into background.js');
   }
 
-  console.log('[4/4] done.');
+  console.log('[3/3] done.');
   console.log('');
   console.log('next:');
-  console.log('  node --experimental-vm-modules tools/fix_guards.js ' +
-    path.join(ROOT, 'chunks/main-D9uk0BkO.js'));
+  console.log('  node --experimental-vm-modules tools/fix_guards.js ' + ROOT);
   console.log('  node build_zip.js ' + ROOT + ' dot-unlocked.zip');
 }
 
@@ -331,4 +279,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { PATCH_SITES, PATCHES, VALUE_PATCHES, START, END };
+module.exports = { PROFILES, pickProfile, profileMatches, START, END };

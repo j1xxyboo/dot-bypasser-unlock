@@ -28,6 +28,19 @@ function stub(n) {
   });
 }
 
+
+/** The chunk with the application code (the one popup.html loads). */
+function appChunk(root) {
+  for (const page of ['popup.html', 'options.html']) {
+    const p = path.join(root, page);
+    if (!fs.existsSync(p)) continue;
+    const html = fs.readFileSync(p, 'utf8');
+    const m = html.match(/src="\/chunks\/(main-[^"]+\.js)"/);
+    if (m) return path.join(root, 'chunks', m[1]);
+  }
+  return null;
+}
+
 const GUARD_RE = new RegExp(
   '([A-Za-z_$][\\w$]*)\\.([A-Za-z_$][\\w$]*)\\|\\|\\(\\1\\.\\2=([A-Za-z_$][\\w$]*)\\(([A-Za-z_$][\\w$]*),(\\d+)\\)\\);' +
   'if\\(([A-Za-z_$][\\w$]*)===(\\d+)\\)\\{return \\4\\(\\.\\.\\.arguments\\)\\}else\\{while\\(true\\)\\{\\}\\}',
@@ -116,7 +129,19 @@ async function fixFile(file, maxRounds = 8) {
 
 (async () => {
   let n = 0;
-  for (const f of process.argv.slice(2)) n += await fixFile(f);
+  for (const arg of process.argv.slice(2)) {
+    // a directory: find the app chunk (the one the pages load)
+    if (fs.existsSync(arg) && fs.statSync(arg).isDirectory()) {
+      const chunk = appChunk(arg);
+      if (!chunk) {
+        console.error('no app chunk found in ' + arg);
+        process.exit(1);
+      }
+      n += await fixFile(chunk);
+      continue;
+    }
+    n += await fixFile(arg);
+  }
   console.log('total constants repaired:', n);
   process.exit(0);
 })().catch(e => { console.error('FATAL', e); process.exit(1); });

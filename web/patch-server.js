@@ -21,13 +21,14 @@
  *  and hands the result back as a zip.
  *
  *  ---------------------------------------------------------------------------
- *  WHY THE UPLOAD IS CHECKED AGAINST A DIGEST LIST
+ *  WHY THE UPLOAD IS CHECKED AGAINST THE KNOWN BUILDS
  *  ---------------------------------------------------------------------------
  *  Repairing the obfuscator's self-defending guards means *evaluating* the
  *  uploaded JavaScript. So an unchecked upload would be remote code
- *  execution. The service therefore only accepts the official Dot Bypasser
- *  4.6.6 release: every file has to match the sha256 in
- *  web/official-files.json. Anything else is rejected with a clear message.
+ *  execution. The service therefore only accepts a Dot Bypasser build it
+ *  knows: every known build has a profile (tools/profiles.json) with the
+ *  patch sites of that build, and the upload has to match one of them.
+ *  Anything else is rejected with a clear message.
  *
  *  ---------------------------------------------------------------------------
  *  RUN
@@ -48,7 +49,6 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 const zip = require('./lib/zip.js');
@@ -59,11 +59,11 @@ const HOST = process.env.HOST || '127.0.0.1';
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD || 64) * 1024 * 1024;
 const TIMEOUT = Number(process.env.TIMEOUT || 180) * 1000;
 
-const OFFICIAL = JSON.parse(fs.readFileSync(path.join(__dirname, 'official-files.json'), 'utf8'));
+const { load: loadProfiles, pickProfile } = require('../tools/profiles.js');
+const PROFILES = loadProfiles();
 
 /* ------------------------------------------------------------------ utils */
 
-const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
 function send(res, status, type, body, headers = {}) {
   const buf = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
@@ -118,29 +118,50 @@ function run(cmd, args, cwd, timeoutMs) {
 /* ------------------------------------------------------------- validation */
 
 /**
- * Check the uploaded tree against the official release.
- * @returns {string[]} list of problems (empty = ok)
+ * Which known build is this upload?
+ *
+ * The obfuscator re-randomises its string tables with every release, so the
+ * patch sites differ per build. Every known build has a profile, and the
+ * profile that matches decides whether the upload can be patched.
+ *
+ * @returns {{profile: object|null, problems: string[]}}
  */
-function validate(files) {
+function identify(files) {
   const problems = [];
-  const official = OFFICIAL.files;
-
-  const extra = [...files.keys()].filter((n) => !official[n]);
-  if (extra.length) {
-    problems.push(`the archive contains ${extra.length} file(s) that are not part of the official release (e.g. ${extra.slice(0, 3).join(', ')})`);
+  if (!files.has('manifest.json')) {
+    return { profile: null, problems: ['the archive has no manifest.json - it is not an unpacked extension'] };
   }
-
-  for (const [name, digest] of Object.entries(official)) {
-    if (!files.has(name)) {
-      problems.push(`missing file: ${name}`);
-      continue;
-    }
-    const got = sha256(files.get(name));
-    if (got !== digest) {
-      problems.push(`file does not match the official release: ${name}`);
-    }
+  let manifest = {};
+  try {
+    manifest = JSON.parse(files.get('manifest.json').toString('utf8'));
+  } catch (e) {
+    return { profile: null, problems: ['the manifest.json in the archive is not valid JSON'] };
   }
-  return problems;
+  if (!/dot\s*bypasser/i.test(String(manifest.name || ''))) {
+    problems.push(`the archive is "${manifest.name}", not Dot Bypasser`);
+  }
+  if (!manifest.background || !manifest.background.service_worker) {
+    problems.push('the manifest has no service worker - this is not the browser extension');
+  }
+  if (problems.length) return { profile: null, problems };
+
+  // write the tree out so the profile can be matched against it
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-ident-'));
+  try {
+    for (const [name, data] of files) {
+      const dest = path.join(tmp, zip.safeName(name));
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, data);
+    }
+    const profile = pickProfile(tmp);
+    if (!profile) {
+      problems.push('this build of Dot Bypasser is not known to the patcher yet');
+      return { profile: null, problems };
+    }
+    return { profile, problems: [] };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 /* ----------------------------------------------------------------- patch */
@@ -154,12 +175,10 @@ async function patchTree(tree) {
   const unlock = await run(process.execPath, [path.join(ROOT, 'unlock_dot.js'), tree], ROOT, TIMEOUT);
   log.push(unlock.out.trim());
 
-  const chunk = path.join(tree, 'chunks', 'main-D9uk0BkO.js');
-  if (!fs.existsSync(chunk)) throw new Error('the archive has no chunks/main-D9uk0BkO.js');
-
+  // the tool finds the app chunk itself (its name changes with every build)
   const guards = await run(
     process.execPath,
-    ['--experimental-vm-modules', path.join(ROOT, 'tools', 'fix_guards.js'), chunk],
+    ['--experimental-vm-modules', path.join(ROOT, 'tools', 'fix_guards.js'), tree],
     ROOT,
     TIMEOUT
   );
@@ -192,13 +211,13 @@ async function handlePatch(req, res) {
     }
     if (!files.size) return sendJson(res, 400, { error: 'the archive is empty' });
 
-    // 2. only the official release is accepted
-    const problems = validate(files);
-    if (problems.length) {
+    // 2. which build is it? (the patch sites differ per build)
+    const { profile, problems } = identify(files);
+    if (!profile) {
       return sendJson(res, 422, {
-        error: `This file is not the supported extension (${OFFICIAL.name} ${OFFICIAL.version}).`,
+        error: 'This file is not a Dot Bypasser build the patcher knows.',
         details: problems.slice(0, 12),
-        hint: 'Download the official Dot Bypasser 4.6.6 from the Chrome Web Store (or the official release) and upload that file.',
+        hint: 'Download the newest Dot Bypasser from the official release page and upload that file.',
       });
     }
 
@@ -230,7 +249,7 @@ async function handlePatch(req, res) {
     walk(tree);
     const archive = zip.writeZip(out);
 
-    const name = `dot-bypasser-${OFFICIAL.version}-unlocked.zip`;
+    const name = `dot-bypasser-${profile.version || 'unlocked'}-unlocked.zip`;
     send(res, 200, 'application/zip', archive, {
       'Content-Disposition': `attachment; filename="${name}"`,
       'X-Patch-Log': encodeURIComponent(log.slice(0, 2000)),
@@ -260,8 +279,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/info') {
       return sendJson(res, 200, {
-        name: OFFICIAL.name,
-        version: OFFICIAL.version,
+        builds: PROFILES.map((p) => ({ name: p.name, version: p.version })),
         maxUploadMB: MAX_UPLOAD / 1024 / 1024,
       });
     }
@@ -275,7 +293,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log('Dot Bypasser patcher');
   console.log('  open  http://' + (HOST === '0.0.0.0' ? 'localhost' : HOST) + ':' + PORT);
-  console.log('  accepts ' + OFFICIAL.name + ' ' + OFFICIAL.version + ' (.zip or .crx)');
+  console.log('  accepts ' + PROFILES.map((p) => p.name).join(', ') + ' (.zip or .crx)');
 });
 
 module.exports = server;

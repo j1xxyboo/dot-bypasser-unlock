@@ -25,7 +25,7 @@ anti-tamper mechanisms) actually work.
 node unlock_dot.js dot
 
 # 3. repair the obfuscator's self-defending guard (see "Why step 3 exists")
-node --experimental-vm-modules tools/fix_guards.js dot/chunks/main-D9uk0BkO.js
+node --experimental-vm-modules tools/fix_guards.js dot
 
 # 4. package it
 node build_zip.js dot dot-unlocked.zip
@@ -119,8 +119,11 @@ error means the folder you pointed it at is not one. The usual reasons:
 | what you have | what to do |
 |---|---|
 | the folder is **already patched** (for example the `dot/` folder from a release ZIP) | nothing to do - load it in Chrome, or start from a fresh copy of the official release |
-| the files come from a **different build** (the Chrome Web Store build, or a newer version) | get the original release the patcher was written for |
+| the files come from a **build the patcher does not know yet** | add a profile for it (see "One patcher, many builds") - the patcher then works on it too |
 | the folder is not an unpacked extension at all | extract the archive first, so you get a folder with `manifest.json` in it |
+
+The known builds are listed in `tools/profiles.json`; the web page accepts
+every one of them.
 
 `tools/inspect.js` tells you which of the three it is:
 
@@ -145,6 +148,39 @@ tells you when the build is simply different.
 If you would rather not touch a terminal at all, use the web page
 (`npm run web`) - it checks the upload the same way and tells the user in
 plain words what is wrong.
+
+## One patcher, many builds
+
+The obfuscator re-randomises its string tables with **every release**, so the
+exact text of the premium gate is different in every build
+(`chunks/main-D9uk0BkO.js` in one release, `chunks/main-2cPWhpKU.js` in the
+next, and so on).
+
+The patcher therefore works from **build profiles** (`tools/profiles.json`):
+one profile per known build, holding the patch sites of that build. The
+patcher looks at the tree, finds the profile that matches and applies it:
+
+```
+$ node unlock_dot.js dot
+build     : 4.6.6-2026-10-27 (version 4.6.6)
+app chunk : chunks/main-2cPWhpKU.js
+[1/3] premium gate (12 sites)
+  patched background.js  (1x)  ...
+```
+
+When the vendor ships a new build, the sites are found again by decoding the
+string tables of that build:
+
+```bash
+node --experimental-vm-modules tools/emit_patches.js dot --save "<name>"
+```
+
+and the new profile is added to `tools/profiles.json`. The tool finds the
+sites by their *meaning* (the property `isPremium`, the comparison against
+the threshold 1.1, the fallback value 10), not by fixed text.
+
+`node tools/inspect.js dot` says which build a folder is and which patch
+sites are missing.
 
 ## Why step 3 exists (the black screen)
 
@@ -305,14 +341,18 @@ web/
 tools/
   fix_guards.js           recompute + rewrite self-defending guard constants
   audit_guards.js         verify every guard constant in a tree
+  emit_patches.js         find the premium gate of any build (new profiles)
+  profiles.js             load the build profiles and match a tree against them
+  profiles.json           the known builds and their patch sites
+  inspect.js              explain what a tree contains (and what is wrong with it)
   mprobe.js               evaluate expressions inside a module's own scope
   tbl.js tbl2.js tbl3.js  dump the obfuscated string tables
   cfg.js                  extract the embedded hash-algorithm configuration
   probecheck.sh           verify the anti-tamper probe sees the official bytes
-  inspect.js              explain what a tree contains (and what is wrong with it)
 
 harness/                  puppeteer verification (headless Chrome)
   final.js                the main check: locks, disabled inputs, badge, nag
+  probe.js                check that the anti-tamper probe sees official bytes
   clickall.js             click every button so all panels/modals mount
   readtrace.js            read a trace the background wrote to chrome.storage
   shot.js                 screenshot the UI

@@ -10,13 +10,20 @@ const path = require('path');
 
 function stub(n){return new Proxy(function(){},{get(t,p){if(p==='then')return undefined;if(p===Symbol.toPrimitive)return()=>undefined;if(p==='toString')return()=>'';if(p==='valueOf')return()=>0;if(p==='length')return 0;return stub(n+'.'+String(p));},apply(){return stub(n+'()');},construct(){return stub('new '+n);}});}
 
-const GUARD_RE = /function\s+([A-Za-z_$][\w$]*)\(\)\{var\s+([A-Za-z_$][\w$]*)=\1\.([A-Za-z_$][\w$]*)\|\|\(\1\.\3=VvCBdcb\(([A-Za-z_$][\w$]*),(\d+)\)\);if\(\2===(\d+)\)\{return \4\(\.\.\.arguments\)\}else\{while\(true\)\{\}\}\}/g;
+/* The same generic pattern that tools/fix_guards.js uses - the name of the
+   hash function changes with every build, so it must not be hard coded. */
+const GUARD_RE = new RegExp(
+  '([A-Za-z_$][\\w$]*)\\.([A-Za-z_$][\\w$]*)\\|\\|\\(\\1\\.\\2=([A-Za-z_$][\\w$]*)\\(([A-Za-z_$][\\w$]*),(\\d+)\\)\\);' +
+  'if\\(([A-Za-z_$][\\w$]*)===(\\d+)\\)\\{return \\4\\(\\.\\.\\.arguments\\)\\}else\\{while\\(true\\)\\{\\}\\}',
+  'g'
+);
 
 function findGuards(src) {
   const out = [];
   let m;
+  GUARD_RE.lastIndex = 0;
   while ((m = GUARD_RE.exec(src))) {
-    out.push({ guard: m[1], target: m[4], n: m[5], expected: m[6], at: m.index });
+    out.push({ guard: m[1], hashFn: m[3], target: m[4], n: m[5], expected: m[7], at: m.index });
   }
   return out;
 }
@@ -38,7 +45,8 @@ async function audit(file) {
   ctx.requestAnimationFrame = f => setTimeout(f, 0);
   vm.createContext(ctx);
 
-  const exprs = guards.map(g => `(()=>{try{return String(VvCBdcb(${g.target},${g.n}))}catch(e){return "E:"+e.message}})()`);
+  // the hash function is looked up by its name in the file's own scope
+  const exprs = guards.map(g => `(()=>{try{return String(${g.hashFn}(${g.target},${g.n}))}catch(e){return "E:"+e.message}})()`);
   const epilogue = '\nglobalThis.__G__=[' + exprs.join(',') + '];\n';
   const tmp = path.join(dir, '__audit_' + path.basename(file).replace(/\.js$/, '') + '_' + Date.now() + '.mjs');
   fs.writeFileSync(tmp, src + epilogue);

@@ -19,12 +19,12 @@ const path = require('path');
 
 const ROOT = path.resolve(process.argv[2] || 'dot');
 
-const OFFICIAL_FILE = path.join(__dirname, '..', 'web', 'official-files.json');
-const OFFICIAL = fs.existsSync(OFFICIAL_FILE)
-  ? JSON.parse(fs.readFileSync(OFFICIAL_FILE, 'utf8'))
-  : { files: {} };
+const { load: loadProfiles } = require('./profiles.js');
+const PROFILES = loadProfiles();
 
 const sha256 = (buf) => require('crypto').createHash('sha256').update(buf).digest('hex');
+const { identifyProfile } = require('./profiles.js');
+const profile = identifyProfile(ROOT);
 
 const read = (rel) => {
   const p = path.join(ROOT, rel);
@@ -51,8 +51,8 @@ console.log('  name    :', manifest.name);
 console.log('  version :', manifest.version);
 console.log('  id      :', manifest.key ? 'fixed (manifest key present)' : 'not fixed');
 
-if (OFFICIAL.version && manifest.version !== OFFICIAL.version) {
-  console.log(`  !  this patcher targets ${OFFICIAL.name} ${OFFICIAL.version}, the tree is ${manifest.version}`);
+if (manifest.version && !PROFILES.some((p) => p.version === manifest.version)) {
+  console.log(`  !  no known profile has version ${manifest.version}`);
 }
 
 /* --- how many files? -------------------------------------------------- */
@@ -73,7 +73,11 @@ console.log('  files   :', files.length);
 
 const bg = read('background.js');
 const hasPrelude = bg ? bg.includes('/*__DOTBYPASS_PRELUDE_START__*/') : false;
-const premiumForced = bg ? bg.includes('[q_7LT1h(mIno9Zz[0x870])+q_7LT1h(mIno9Zz[0x871])]:!0') : false;
+// the forced premium flag is one of the profile's patch sites
+const premiumSite = profile
+  ? (profile.patches || []).find((x) => x.label === 'isPremium default' && x.file === 'background.js')
+  : null;
+const premiumForced = premiumSite && bg ? bg.includes(premiumSite.replace) : false;
 console.log('  prelude :', hasPrelude ? 'present (the tree is patched)' : 'absent (pristine)');
 console.log('  premium :', premiumForced ? 'forced on (the tree is patched)' : 'not forced (pristine)');
 
@@ -84,47 +88,46 @@ if (hasPrelude && premiumForced) {
   process.exit(0);
 }
 
-/* --- how does it compare to the official release? --------------------- */
+/* --- how does it compare to the known releases? -------------------------- */
 
-const mismatched = [];
-const missing = [];
-for (const [rel, digest] of Object.entries(OFFICIAL.files || {})) {
-  const p = path.join(ROOT, rel);
-  if (!fs.existsSync(p)) { missing.push(rel); continue; }
-  if (sha256(fs.readFileSync(p)) !== digest) mismatched.push(rel);
-}
-if (mismatched.length || missing.length) {
-  console.log('\n  vs the official release:');
-  for (const rel of missing.slice(0, 10)) console.log('    missing  :', rel);
-  for (const rel of mismatched.slice(0, 10)) console.log('    different:', rel);
-  if (mismatched.length > 10 || missing.length > 10) {
-    console.log('    ... and', mismatched.length + missing.length - 20, 'more');
+for (const known of PROFILES) {
+  const files = known.files || {};
+  const mismatched = [];
+  const missing = [];
+  for (const [rel, digest] of Object.entries(files)) {
+    const p = path.join(ROOT, rel);
+    if (!fs.existsSync(p)) { missing.push(rel); continue; }
+    if (sha256(fs.readFileSync(p)) !== digest) mismatched.push(rel);
   }
-  if (mismatched.length) {
-    console.log('\n  The files differ from the official release. That is why the patcher');
-    console.log('  cannot find its patch sites: the obfuscation is different.');
-    console.log('  Use the original release archive (the one the patcher was written for).');
+  const same = Object.keys(files).length - mismatched.length - missing.length;
+  console.log('\n  vs "' + known.name + '": ' + same + '/' + Object.keys(files).length + ' files identical');
+  for (const rel of missing.slice(0, 6)) console.log('    missing  :', rel);
+  for (const rel of mismatched.slice(0, 6)) console.log('    different:', rel);
+  if (missing.length + mismatched.length > 12) {
+    console.log('    ... and', missing.length + mismatched.length - 12, 'more');
   }
-} else {
-  console.log('\n  vs the official release: identical');
 }
 
 /* --- which patch sites are there? ------------------------------------- */
 
-const sites = require('../unlock_dot.js').PATCH_SITES || [];
-if (sites.length) {
+if (profile) {
+  console.log('\n  build profile: ' + profile.name + (profile.appChunk ? '  (app chunk ' + profile.appChunk + ')' : ''));
   console.log('\n  patch sites:');
-  for (const s of sites) {
-    const src = read(s.file);
+  for (const site of profile.patches) {
+    const src = read(site.file);
     if (src === null) {
-      console.log(`    ?  ${s.file}  (file missing)`);
+      console.log(`    ?  ${site.file}  (file missing)`);
       continue;
     }
-    const n = src.split(s.find).length - 1;
-    const a = src.split(s.replace).length - 1;
+    const n = src.split(site.find).length - 1;
+    const a = src.split(site.replace).length - 1;
     const state = n === 1 ? 'ok' : a >= 1 ? 'already patched' : 'MISSING';
-    console.log(`    ${state.padEnd(15)} ${s.file}  ${s.label || ''}`);
+    console.log(`    ${state.padEnd(15)} ${site.file}  ${site.label || ''}`);
   }
+} else {
+  console.log('\n  no known build profile matches this tree.');
+  console.log('  The premium gate moved - the sites have to be found again:');
+  console.log('    node --experimental-vm-modules tools/emit_patches.js ' + ROOT + ' --save "<name>"');
 }
 
 console.log('\nDone.');

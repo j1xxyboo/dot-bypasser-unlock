@@ -1,0 +1,232 @@
+{
+  "profiles": [
+    {
+      "name": "4.6.6-older-build",
+      "version": "4.6.6",
+      "appChunk": "chunks/main-D9uk0BkO.js",
+      "patches": [
+        {
+          "file": "background.js",
+          "find": "q_7LT1h(mIno9Zz[0x2b7])+mIno9Zz[0x113]]:mIno9Zz[0x16d]",
+          "replace": "q_7LT1h(mIno9Zz[0x2b7])+mIno9Zz[0x113]]:0",
+          "label": "premium fallback"
+        },
+        {
+          "file": "background.js",
+          "find": "q_7LT1h(mIno9Zz[0x870])+q_7LT1h(mIno9Zz[0x871])]:!mIno9Zz[0x3]",
+          "replace": "q_7LT1h(mIno9Zz[0x870])+q_7LT1h(mIno9Zz[0x871])]:!0",
+          "label": "isPremium default"
+        },
+        {
+          "file": "background.js",
+          "find": "s7wPzlV<mIno9Zz[0x874]||!mIno9Zz[0x3]",
+          "replace": "s7wPzlV<mIno9Zz[0x874]||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "chunks/Settings-3vmFYYj7.js",
+          "find": "__Uint8Array<1.1||!ix2qAS[0x4]",
+          "replace": "__Uint8Array<1.1||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "chunks/main-D9uk0BkO.js",
+          "find": "Bdwbpn8<1.1||!UdZOaAF[0x4]",
+          "replace": "Bdwbpn8<1.1||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "chunks/main-D9uk0BkO.js",
+          "find": "UdZOaAF[0xbae]),{[NF0xd1l(UdZOaAF[0xbaf])]:!UdZOaAF[0x0]})[NF0xd1l(UdZOaAF[0x73b])](()=>{});if(!gpZyYe){lr[NF0xd1l(UdZOaAF[0x79b])]=!UdZOaAF[0x4];return}",
+          "replace": "UdZOaAF[0xbae]),{[NF0xd1l(UdZOaAF[0xbaf])]:!UdZOaAF[0x0]})[NF0xd1l(UdZOaAF[0x73b])](()=>{});if(!gpZyYe){lr[NF0xd1l(UdZOaAF[0x79b])]=!0;return}",
+          "label": "no-response path"
+        },
+        {
+          "file": "content-scripts/content.js",
+          "find": "ZFK8_u(U6epo37[0x3be])+U6epo37[0x2d0]]:U6epo37[0x178]",
+          "replace": "ZFK8_u(U6epo37[0x3be])+U6epo37[0x2d0]]:0",
+          "label": "premium fallback"
+        },
+        {
+          "file": "content-scripts/content.js",
+          "find": "ZFK8_u(U6epo37[0x34c])+ZFK8_u(U6epo37[0x34d])]:!U6epo37[0x3]",
+          "replace": "ZFK8_u(U6epo37[0x34c])+ZFK8_u(U6epo37[0x34d])]:!0",
+          "label": "isPremium default"
+        },
+        {
+          "file": "content-scripts/content.js",
+          "find": "Kg6FMg2<U6epo37[0x3c1]||!U6epo37[0x3]",
+          "replace": "Kg6FMg2<U6epo37[0x3c1]||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "content-scripts/content.js",
+          "find": "qFSNyY<U6epo37[0x3c1]||!U6epo37[0x3]",
+          "replace": "qFSNyY<U6epo37[0x3c1]||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "content-scripts/main.js",
+          "find": "ptLcImW(ZRc3uM[0x2ec])+ZRc3uM[0x2ed]]:ZRc3uM[0x16b]",
+          "replace": "ptLcImW(ZRc3uM[0x2ec])+ZRc3uM[0x2ed]]:0",
+          "label": "premium fallback"
+        },
+        {
+          "file": "content-scripts/main.js",
+          "find": "ptLcImW(ZRc3uM[0x2ea])+ptLcImW(ZRc3uM[0x2eb])]:!ZRc3uM[0x3]",
+          "replace": "ptLcImW(ZRc3uM[0x2ea])+ptLcImW(ZRc3uM[0x2eb])]:!0",
+          "label": "isPremium default"
+        },
+        {
+          "file": "content-scripts/main.js",
+          "find": "Z6xg7it<1.1||!ZRc3uM[0x3]",
+          "replace": "Z6xg7it<1.1||!0",
+          "label": "premium threshold"
+        }
+      ],
+      "files": {
+        "assets/main-BI4Mu9ZV.css": "4885a5906bd7c3da684c00ae4cb86c6c6d99b80ae25a78a3816be82ac78f96dd",
+        "background.js": "222f2d3aad60c3f7624a76ef209275f56ad65dfa196e19c9c15675dd642306a4",
+        "chunks/BinHistory-Z8ewo9xL.js": "48b7a3b9b82cec5de9c19ab07c3dcf1fcfb7786e7c64c767ed5bdd5d6ef88dfc",
+        "chunks/CustomGatewaysSetting-DVHwT5VN.js": "b5d923e106758b1277b1eac5b241e31d89a68f1e5f80e3d3e59630dab72d9c7b",
+        "chunks/Fingerprint-CnKJ_vSA.js": "ca5621646f422c8fceadfd1067192449c9cb11d5549e0b1e219487a917dcf82e",
+        "chunks/GatewaysSetting-DsAs5-Ri.js": "573db38e0a01dd23cc0162906ec658da68ae04f3594b8596236ec676a96a8c7f",
+        "chunks/IconLockFilled-D5FAnwUQ.js": "c6251276946c3fcf3178a3b9fea5f5998dcd6b8ab395d1625eb98661b3938007",
+        "chunks/IconPlus-DZ5CbNCh.js": "fe32c4b9219bca9c87da93cc69c3aa9893e1bc97446caef46c2fce3faea707b3",
+        "chunks/IconRestore-72Y0IdO6.js": "55cf591d8703884f85e4987852b8b8494437b27512f65f3e49bc28009ad8ac31",
+        "chunks/Modal-DVtKSfYm.js": "59c75b630ba97babcbf43a3969a46c3f7a3305e4b7a3860fc3c3bb965fee2242",
+        "chunks/Settings-3vmFYYj7.js": "dd7be5cabaf5ab9f9fe17bdf3b84670172e3f0360db05004f2f5321c5053fdb8",
+        "chunks/TextInput.vue_vue_type_script_setup_true_lang-B6ktrOzB.js": "08aeb14bf926d8a59e821324f4977a91601b659a82ed56d6241c4e3bfdba85fb",
+        "chunks/Unofficial-DSGqBefk.js": "cccfa9de876b5fdb14322248af094f72b61aea055a4089794300c1ab42d68ac2",
+        "chunks/fingerprint-DeHcGO4s.js": "539dc7dc1ce6f8dac8ee52f4789169a59b20d27a6a49e9c6d2f3f549562cbb9c",
+        "chunks/main-D9uk0BkO.js": "ef31234cd83b0ddae33b60ed6411f0fae81a033d2b84fe9a7170c4df2348db72",
+        "chunks/offscreen-BJAn1Uau.js": "9daec4d766d84dc0ff3d81e0074720fcab257e5778c6c5dd6da575901945a1d2",
+        "chunks/textEncoderDecoder-D9OGzhqH.js": "8450a948fc76192e03e984f3f28250f10e876f9b5edb366ca750ce20e276f00a",
+        "content-scripts/content.js": "e8c085a9709b81bcb1cc588bc2b0e28fae42287042a39b9e434fe00355a805a2",
+        "content-scripts/main.js": "ae73090340002bee1c3aec5954aba0842f1189ac2f9a0ce77dd17260e5b2dd92",
+        "favicon.ico": "53fb4ccd587bbf5a01444d9bb3b6420b16c3e02272cf59644f2e4362a4b95591",
+        "hit.mp3": "6d3406291215d5c3c404992113790afe6f529e5fe2bf2fc1eaae3cc09600462a",
+        "icons/1024.png": "3c7d105ce8a2f63d031be77ec3959d60a7e80961a1aa826006b738636a4bee95",
+        "icons/128.png": "7713f7b78dc2d76b9c58250222a11e5fb8f36a5cd81b7ed56982417d09dd207f",
+        "icons/256.png": "db14a4f1779d9c73a688508e194d9c4c172820c3b91fa1c65dca6d3a7d74e210",
+        "icons/512.png": "772050c53c6d90f94c21f344c5ff8712446e83849c40868270792f2da15e1c05",
+        "manifest.json": "c6ccd657c49ddba586f6b38e88b6f3869242658e2dc0a680d404b3a961b032f5",
+        "offscreen.html": "0f119f60c0a2dd17620ccfce0089fb29c2c34fbac5b797d59726900a068c6a8f",
+        "options.html": "1b10aa9ebb2608d17326568179483c91944cc5c37c8ee19a33219a99381e24d4",
+        "popup.html": "ba31a9ae5363482ea4fc32d60a7292f90d4bc2beda179ad997672125a0f4b32a",
+        "settings.json": "e3566b3a06430868d71e9287dfd6c6c520a3da027aabea01951d407ee131dc2f"
+      }
+    },
+    {
+      "name": "4.6.6-2026-10-27",
+      "version": "4.6.6",
+      "appChunk": "chunks/main-2cPWhpKU.js",
+      "patches": [
+        {
+          "file": "background.js",
+          "find": "QGn4Ya(GDUhJUf[0x871])+GDUhJUf[0xdb]]:GDUhJUf[0x1ba]",
+          "replace": "QGn4Ya(GDUhJUf[0x871])+GDUhJUf[0xdb]]:0",
+          "label": "premium fallback"
+        },
+        {
+          "file": "background.js",
+          "find": "QGn4Ya(GDUhJUf[0x23e])+QGn4Ya(GDUhJUf[0x23f])]:!GDUhJUf[0x3]",
+          "replace": "QGn4Ya(GDUhJUf[0x23e])+QGn4Ya(GDUhJUf[0x23f])]:!0",
+          "label": "isPremium default"
+        },
+        {
+          "file": "background.js",
+          "find": "SBt7eQ<GDUhJUf[0x874]||!GDUhJUf[0x3]",
+          "replace": "SBt7eQ<GDUhJUf[0x874]||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "chunks/Settings-BHLRXi9k.js",
+          "find": "__Buffer<1.1||!R7gQroi[0x4]",
+          "replace": "__Buffer<1.1||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "chunks/main-2cPWhpKU.js",
+          "find": "PVOAlPM<1.1||!ffbbgXt[0x4]",
+          "replace": "PVOAlPM<1.1||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "chunks/main-2cPWhpKU.js",
+          "find": "ffbbgXt[0xb11]),{[u7au_LM(ffbbgXt[0xaa0])]:!ffbbgXt[0x0]})[u7au_LM(ffbbgXt[0x6f6])](()=>{});if(!uOAKqe){lr[u7au_LM(ffbbgXt[0x75c])]=!ffbbgXt[0x4];return}",
+          "replace": "ffbbgXt[0xb11]),{[u7au_LM(ffbbgXt[0xaa0])]:!ffbbgXt[0x0]})[u7au_LM(ffbbgXt[0x6f6])](()=>{});if(!uOAKqe){lr[u7au_LM(ffbbgXt[0x75c])]=!0;return}",
+          "label": "no-response path"
+        },
+        {
+          "file": "content-scripts/content.js",
+          "find": "S7Lwz8z(JlbOj6[0x3ee])+JlbOj6[0xf9]]:JlbOj6[0x158]",
+          "replace": "S7Lwz8z(JlbOj6[0x3ee])+JlbOj6[0xf9]]:0",
+          "label": "premium fallback"
+        },
+        {
+          "file": "content-scripts/content.js",
+          "find": "S7Lwz8z(JlbOj6[0x34a])+S7Lwz8z(JlbOj6[0x34b])]:!JlbOj6[0x3]",
+          "replace": "S7Lwz8z(JlbOj6[0x34a])+S7Lwz8z(JlbOj6[0x34b])]:!0",
+          "label": "isPremium default"
+        },
+        {
+          "file": "content-scripts/content.js",
+          "find": "_s3vyh<JlbOj6[0x3f1]||!JlbOj6[0x3]",
+          "replace": "_s3vyh<JlbOj6[0x3f1]||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "content-scripts/content.js",
+          "find": "WoUwJL<JlbOj6[0x3f1]||!JlbOj6[0x3]",
+          "replace": "WoUwJL<JlbOj6[0x3f1]||!0",
+          "label": "premium threshold"
+        },
+        {
+          "file": "content-scripts/main.js",
+          "find": "Zx6ZdTL(zzkQNlP[0x46b])+Zx6ZdTL(zzkQNlP[0x46c])]:!zzkQNlP[0x3]",
+          "replace": "Zx6ZdTL(zzkQNlP[0x46b])+Zx6ZdTL(zzkQNlP[0x46c])]:!0",
+          "label": "isPremium default"
+        },
+        {
+          "file": "content-scripts/main.js",
+          "find": "E7V1Y9<1.1||!zzkQNlP[0x3]",
+          "replace": "E7V1Y9<1.1||!0",
+          "label": "premium threshold"
+        }
+      ],
+      "files": {
+        "assets/main-BfRmi4bI.css": "230250d6c4456c91831c1d89ba75cafdf4a930c2ae540b46470294dd9bee08fb",
+        "background.js": "7f2ab7000ca11875c20a9cc48ef464db29ed577ca4c39ec4ad8c1b0537dd5eb1",
+        "chunks/BinHistory-BkK20Jsn.js": "8cfdfbc7f885ab9462b83f7bed4317e653e2f1361b59200a5f171e7de6af526d",
+        "chunks/CustomGatewaysSetting-DtyIdNsH.js": "9a6859ac49b646ae4af3b9fb5e29edd1c243f2e00ee033c974b412273bb2d8e3",
+        "chunks/Fingerprint-B6o_QrwF.js": "809a2207d06458d9b0ece013c12f95abd20530c0baa2f0ee42588532a1f4c14d",
+        "chunks/GatewaysSetting-LdjnR4ki.js": "5c8ac3894b826c9ef84b5892ff047e314728672e4a8cb73c83c45b5d0f988ed3",
+        "chunks/IconLockFilled-D34IX30O.js": "4b2030fc5f578b30d952ef80a4c4ebf52d331454226763fe9dc25b5fbc4152fc",
+        "chunks/IconPlus-BCf3F5WP.js": "f44721e16ea585dce748b31c0e8ef11d1b0f4f733b5324a1696771d0b7416f6b",
+        "chunks/IconRestore-CxLl9i0n.js": "023cf752c7d49d4c7df412aae8ff808d8561b77abc1d8c7bc161e0b667c9f3ec",
+        "chunks/Modal-DPmHXnI-.js": "3ab981d258f84bf7c2920a9a019442058f2baa3bf60088010d086ac085f4b7d2",
+        "chunks/Settings-BHLRXi9k.js": "eae8e4b924c0ca11ef7c52f0b20d159f239e148902d06486f5a7ff5abe7143bf",
+        "chunks/TextInput.vue_vue_type_script_setup_true_lang-JVqCtrpg.js": "aa999a8a78232ec9ed462acac69299d36c59cb5ad9d9fb5aee928fbede79b87b",
+        "chunks/Unofficial-6vbvPe-t.js": "3ff2397173e172bef7ce9bf0453d26eec233e68ed995e1f6ccc947655cc84026",
+        "chunks/fingerprint-BISHMTms.js": "fef5e868f297c8f4856fd9ed1d2c1992f722f0f35769f028673225ca422a1680",
+        "chunks/main-2cPWhpKU.js": "a3dc836aa756a88de704bce1a7087769f47da7bc3c749b99d783971615d16bb1",
+        "chunks/offscreen-9e_-CNTo.js": "fc17a63c00fd3c7528f30c2657d0687011b0bcd3bc43ae265d19313f1a5ab2d2",
+        "chunks/textEncoderDecoder-qZBrGp_z.js": "3be52e1b837ac5cab7353fc3fb88f093f8fd2810d69d89f32352f1f770bec34d",
+        "content-scripts/content.js": "6e8ff588aab255531bb8aaa866b36b29cf3544327944c55e805828a39a40e04f",
+        "content-scripts/main.js": "9222c9cac328cda79c41a0ec98cc54019293baec348f3dddf019c8d6501251f9",
+        "favicon.ico": "53fb4ccd587bbf5a01444d9bb3b6420b16c3e02272cf59644f2e4362a4b95591",
+        "hit.mp3": "6d3406291215d5c3c404992113790afe6f529e5fe2bf2fc1eaae3cc09600462a",
+        "icons/1024.png": "3c7d105ce8a2f63d031be77ec3959d60a7e80961a1aa826006b738636a4bee95",
+        "icons/128.png": "7713f7b78dc2d76b9c58250222a11e5fb8f36a5cd81b7ed56982417d09dd207f",
+        "icons/256.png": "db14a4f1779d9c73a688508e194d9c4c172820c3b91fa1c65dca6d3a7d74e210",
+        "icons/512.png": "772050c53c6d90f94c21f344c5ff8712446e83849c40868270792f2da15e1c05",
+        "manifest.json": "c6ccd657c49ddba586f6b38e88b6f3869242658e2dc0a680d404b3a961b032f5",
+        "offscreen.html": "dc622c32afd53187cb33b1727366e4f5b9c2ba91ef25c3487552c4a501652fff",
+        "options.html": "f4876eb02bae2b81b5695fd626a44759e3bce9ae39fa33764e5880907d45e796",
+        "popup.html": "f3dafc57e359e273bfa90a26863e66ae7c7dc7d65901a75321987ad36f79c792",
+        "settings.json": "e3566b3a06430868d71e9287dfd6c6c520a3da027aabea01951d407ee131dc2f"
+      }
+    }
+  ]
+}
