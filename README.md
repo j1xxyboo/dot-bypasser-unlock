@@ -111,6 +111,41 @@ extension behaves as premium offline as well.
 
 ---
 
+## "expected 1 occurrence(s) ... found 0"
+
+The patcher only works on a **pristine** copy of Dot Bypasser 4.6.6. This
+error means the folder you pointed it at is not one. The usual reasons:
+
+| what you have | what to do |
+|---|---|
+| the folder is **already patched** (for example the `dot/` folder from a release ZIP) | nothing to do - load it in Chrome, or start from a fresh copy of the official release |
+| the files come from a **different build** (the Chrome Web Store build, or a newer version) | get the original release the patcher was written for |
+| the folder is not an unpacked extension at all | extract the archive first, so you get a folder with `manifest.json` in it |
+
+`tools/inspect.js` tells you which of the three it is:
+
+```bash
+node tools/inspect.js dot
+```
+
+```
+tree: dot
+  name    : Dot Bypasser
+  version : 4.6.6
+  files   : 30
+  prelude : present (the tree is patched)
+  premium : forced on (the tree is patched)
+
+VERDICT: this tree is ALREADY PATCHED.
+```
+
+It compares every file with the checksums of the official release, so it also
+tells you when the build is simply different.
+
+If you would rather not touch a terminal at all, use the web page
+(`npm run web`) - it checks the upload the same way and tells the user in
+plain words what is wrong.
+
 ## Why step 3 exists (the black screen)
 
 This is the part that is easy to get wrong, and the reason a naive edit
@@ -274,6 +309,7 @@ tools/
   tbl.js tbl2.js tbl3.js  dump the obfuscated string tables
   cfg.js                  extract the embedded hash-algorithm configuration
   probecheck.sh           verify the anti-tamper probe sees the official bytes
+  inspect.js              explain what a tree contains (and what is wrong with it)
 
 harness/                  puppeteer verification (headless Chrome)
   final.js                the main check: locks, disabled inputs, badge, nag

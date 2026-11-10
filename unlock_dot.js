@@ -237,37 +237,98 @@ function apply(file, find, replace, expected) {
   console.log(`  patched ${file}  (${count}x)  ${JSON.stringify(find.slice(0, 60))}`);
 }
 
-console.log('Dot Bypasser v4.6.6 - unlocking premium / locked features');
-console.log('target:', ROOT);
+/**
+ * Everything the patcher changes, in one list, so that tools/inspect.js can
+ * report on it without duplicating the patterns.
+ */
+const PATCH_SITES = [
+  ...PATCHES.map((p) => ({ ...p, label: 'premium flag' })),
+  ...VALUE_PATCHES.map((p) => ({ ...p, label: 'premium fallback' })),
+];
 
-console.log('[1/4] premium comparison sites');
-for (const p of PATCHES) apply(p.file, p.find, p.replace, 1);
+/* ------------------------------------------------------------------ main */
 
-console.log('[2/4] premium fallback values');
-for (const p of VALUE_PATCHES) apply(p.file, p.find, p.replace, 1);
+function main() {
+  console.log('Dot Bypasser v4.6.6 - unlocking premium / locked features');
+  console.log('target:', ROOT);
 
-console.log('[3/4] anti-tamper probe neutraliser');
-{
-  // revert map: file -> list of [patched, original]
-  const revertMap = {};
-  for (const p of [...PATCHES, ...VALUE_PATCHES]) {
-    (revertMap[p.file] = revertMap[p.file] || []).push([p.replace, p.find]);
+  // A tree that was patched before is not an error - say so and stop.
+  {
+    const bgFile = path.join(ROOT, 'background.js');
+    if (!fs.existsSync(path.join(ROOT, 'manifest.json')) || !fs.existsSync(bgFile)) {
+      throw new Error(
+        'there is no unpacked extension in ' + ROOT +
+        ' (manifest.json and background.js are missing).\n' +
+        '  Extract the extension first, so that you get a folder with manifest.json in it,\n' +
+        '  and point the patcher at that folder.'
+      );
+    }
+    const bg = fs.readFileSync(bgFile, 'utf8');
+    const hasPrelude = bg.includes(START);
+    const hasPatch = bg.includes(PATCHES[0].replace);
+    if (hasPrelude && hasPatch) {
+      console.log('');
+      console.log('This tree is already patched.');
+      console.log('  Load the "' + path.basename(ROOT) + '" folder in Chrome, or start from a fresh');
+      console.log('  copy of the official release if you want to patch it again.');
+      console.log('');
+      console.log('  (node tools/inspect.js ' + ROOT + ' explains what a tree contains)');
+      return;
+    }
   }
-  const p = path.join(ROOT, 'background.js');
-  let src = fs.readFileSync(p, 'utf8');
-  if (src.includes(START)) {
-    console.log('  prelude already present, replacing');
-    const a = src.indexOf(START);
-    const b = src.indexOf(END);
-    src = src.slice(0, a) + src.slice(b + END.length);
+
+  console.log('[1/4] premium comparison sites');
+  for (const p of PATCHES) apply(p.file, p.find, p.replace, 1);
+
+  console.log('[2/4] premium fallback values');
+  for (const p of VALUE_PATCHES) apply(p.file, p.find, p.replace, 1);
+
+  console.log('[3/4] anti-tamper probe neutraliser');
+  {
+    // revert map: file -> list of [patched, original]
+    const revertMap = {};
+    for (const p of [...PATCHES, ...VALUE_PATCHES]) {
+      (revertMap[p.file] = revertMap[p.file] || []).push([p.replace, p.find]);
+    }
+    const p = path.join(ROOT, 'background.js');
+    let src = fs.readFileSync(p, 'utf8');
+    if (src.includes(START)) {
+      console.log('  prelude already present, replacing');
+      const a = src.indexOf(START);
+      const b = src.indexOf(END);
+      src = src.slice(0, a) + src.slice(b + END.length);
+    }
+    fs.writeFileSync(p, buildPrelude(revertMap) + src);
+    console.log('  injected probe neutraliser into background.js');
   }
-  fs.writeFileSync(p, buildPrelude(revertMap) + src);
-  console.log('  injected probe neutraliser into background.js');
+
+  console.log('[4/4] done.');
+  console.log('');
+  console.log('next:');
+  console.log('  node --experimental-vm-modules tools/fix_guards.js ' +
+    path.join(ROOT, 'chunks/main-D9uk0BkO.js'));
+  console.log('  node build_zip.js ' + ROOT + ' dot-unlocked.zip');
 }
 
-console.log('[4/4] done.');
-console.log('');
-console.log('next:');
-console.log('  node --experimental-vm-modules tools/fix_guards.js ' +
-  path.join(ROOT, 'chunks/main-D9uk0BkO.js'));
-console.log('  node build_zip.js ' + ROOT + ' dot-unlocked.zip');
+if (require.main === module) {
+  try {
+    main();
+  } catch (e) {
+    console.error('');
+    console.error('Could not patch ' + ROOT + ': ' + e.message);
+    console.error('');
+    console.error('What to check:');
+    console.error('  node tools/inspect.js ' + ROOT);
+    console.error('');
+    console.error('It prints the extension version, whether the tree is already patched and');
+    console.error('which patch sites are missing. The patcher only works on a pristine copy of');
+    console.error('Dot Bypasser 4.6.6 (the release it was written for).');
+    console.error('');
+    console.error('If you do not want to use the command line at all, use the web page:');
+    console.error('  npm run web      ->  http://localhost:8787');
+    console.error('');
+    process.exit(1);
+  }
+}
+
+module.exports = { PATCH_SITES, PATCHES, VALUE_PATCHES, START, END };
