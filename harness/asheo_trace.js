@@ -61,11 +61,17 @@ const EXT = process.argv[2];
     console.log('wrote ' + process.env.DUMP);
   }
   console.log('--- runtime messages ---');
+  const sent = new Set();
+  for (const m of msgs) { sent.add(JSON.stringify(m.sent)); }
   for (const m of msgs) {
     const s = JSON.stringify(m.sent);
     const g = JSON.stringify(m.got);
     console.log('  sent: ' + (s || '').slice(0, 220));
     console.log('  got : ' + (g || '').slice(0, 1400));
+  }
+  console.log('--- sent without an answer (timeout) ---');
+  for (const m of msgs) {
+    if (m.got === undefined) console.log('  ' + JSON.stringify(m.sent).slice(0, 200));
   }
   await browser.close();
   process.exit(0);

@@ -123,41 +123,29 @@ patch('functions/license-client.js',
   'planDisplayName:"Premium",seat:null,seats:null,tier:"premium"});');
 
 /*
- * ...and the *cached* entitlement is what the background asks when a feature
- * is switched on ("Premium check failed"). It is read from
- * chrome.storage.local["asheo.license.cache.v1"], so the getter is replaced
- * with one that hands out the premium entitlement. The proxy answers every
- * method the background calls on it with "allowed".
+ * The cached entitlement is what the worker sends to the vendor's server and
+ * what decides which rule pack it downloads. It is deliberately NOT faked:
+ * with a "premium" cached entitlement the worker asks for the premium pack,
+ * the server (no license on file) refuses it, and the extension ends up with
+ * no payment rules at all and a timing-out entitlement refresh.
+ *
+ * The local premium decision is made in two other places:
+ *   - getEntitlement()  -> what the popup shows
+ *   - the response patch in functions/background.js -> the activation
  */
-patch('functions/license-client.js',
-  'export const getCachedVerifiedEntitlement=_getCachedVerifiedEntitlement;',
-  'export const getCachedVerifiedEntitlement=()=>new Proxy(' + PREMIUM + ',' +
-  '{get:(t,p)=>{return (p in t?t[p]:(()=>true));}});');
 
 /*
  * Switching a feature on does not only ask for the entitlement, it also asks
- * for an *activation token* from the vendor's server (feature-activation.js)
- * and verifies that token (license-client.js). Without a server the token
- * request fails and the extension answers "Premium check failed. Try again.".
+ * for an *activation token* from the vendor's server (feature-activation.js).
+ * Without a server that request fails and the extension answers
+ * "Premium check failed. Try again.".
  *
- * So the token is produced locally and the verification accepts it.
+ * The token itself is NOT faked here: the real token is what the extension
+ * sends to the vendor's server for the rule pack and the entitlement
+ * refresh, and faking it broke both ("No payment rules found", "Timeout:
+ * entitlement.refresh"). The activation is solved one level up instead - see
+ * the response patch in functions/background.js.
  */
-patch('functions/license-client.js',
-  'export const verifyEntitlementToken=_verifyEntitlementToken;',
-  'export const verifyEntitlementToken=async()=>({ok:true,valid:true,feature:"*",' +
-  'exp:Date.now()+86400000,iat:Date.now()});');
-patch('functions/license-client.js',
-  'export const isWithinGrace=_isWithinGrace;',
-  'export const isWithinGrace=()=>true;');
-patch('functions/license-client.js',
-  'export const isTokenUsable=_isTokenUsable;',
-  'export const isTokenUsable=()=>true;');
-patch('functions/license-client.js',
-  'export const getCachedToken=_getCachedToken;',
-  'export const getCachedToken=()=>"unlocked-token";');
-patch('functions/feature-activation.js',
-  'export async function fetchToken(feature){',
-  'export async function fetchToken(feature){return "unlocked-token";');
 
 console.log('[3/3] build attestation');
 // The signature check over build-hashes.json stays; only the per-file hash
@@ -181,17 +169,35 @@ const PRELUDE = `
 /* patch: premium activations are answered locally */
 ;(function () {
   try {
+    var PREMIUM = ` + PREMIUM + `;
     var om = chrome.runtime.onMessage;
     var orig = om.addListener.bind(om);
     om.addListener = function (fn, ...rest) {
       var wrapped = function (msg, sender, sendResponse) {
         var patched = function (res) {
           try {
-            if (res && typeof res === 'object' && res.success === false &&
-                (res.reason === 'activation_failed' || res.reason === 'premium_required')) {
-              res = Object.assign({}, res, {
-                success: true, reason: 'unlocked', message: 'Activated.', detail: null,
-              });
+            if (res && typeof res === 'object') {
+              /* an activation that could not be done on the server is done locally */
+              if (res.success === false &&
+                  (res.reason === 'activation_failed' || res.reason === 'premium_required')) {
+                res = Object.assign({}, res, {
+                  success: true, reason: 'unlocked', message: 'Activated.', detail: null,
+                });
+              }
+              /* what the popup shows is the premium tier */
+              if (res.entitlement && typeof res.entitlement === 'object') {
+                res = Object.assign({}, res, {
+                  entitlement: PREMIUM, tier: 'premium', plan: 'premium',
+                  planDisplayName: 'Premium', licenseType: 'premium', status: 'active',
+                });
+              }
+              if (res.status && typeof res.status === 'object') {
+                res = Object.assign({}, res, {
+                  status: Object.assign({}, res.status, {
+                    tier: 'premium', plan: 'premium', planDisplayName: 'Premium',
+                  }),
+                });
+              }
             }
           } catch (e) {}
           return sendResponse(res);
