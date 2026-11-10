@@ -324,6 +324,59 @@ To offer it to others, put it behind a reverse proxy with TLS:
 HOST=0.0.0.0 PORT=80 node web/patch-server.js
 ```
 
+## Unlocking a different extension (Asheo 1.6.2)
+
+The same idea works for other extensions. Asheo (also an MV3 extension, also
+obfuscated, also with a signed build attestation) is unlocked with
+
+```bash
+node tools/asheo_unlock.js ../asheo-latest
+```
+
+It patches three things:
+
+| file | what |
+|---|---|
+| `functions/premium-gate.js` | `can()` and `require()` always allow, `getEntitlement()` returns the premium entitlement, the plan object reports the premium tier |
+| `functions/license-client.js` | the license status reports the premium tier |
+| `functions/build-attest.js` | the per-file hash comparison is skipped |
+
+The entitlement shape was captured from the running extension (`{action:
+"premium.get"}`):
+
+```json
+{ "tier": "free", "source": "license", "isFounder": false,
+  "features": { "browserMods": false, "ruleOpsLab": false, "liveHud": false,
+                "advancedProtection": false, "apiAccess": false,
+                "experimentalFeatures": false },
+  "capabilities": { "customEncryptedGateways": false, "binGenerator": false,
+                     "adyenGateway": false },
+  "limits": { "binPool": 2, "ccQueue": 10, "ruleLimit": 20,
+              "profileLimit": 2, "randomRouting": false },
+  "plan": "free", "planDisplayName": "Free", "licenseType": "free",
+  "status": "inactive" }
+```
+
+...and the patched build reports `tier: "premium"` with every feature and
+capability enabled.
+
+**About the build attestation.** Asheo ships `build-hashes.json` (a list of
+every packaged file with its sha256) plus an ES256 signature over it, made
+with a key that only exists on the release machine. Editing any file makes the
+*signature* check fail and the extension locks itself down. But the signature
+covers the **manifest** (`build-hashes.json`), not the files themselves - so
+only the per-file hash comparison has to go. The signature check stays, the
+digest the extension reports to the vendor's server is still the genuine one,
+and the extension does not notice the modification.
+
+Verification:
+
+```bash
+node harness/asheo.js ../asheo-latest        # before
+node harness/asheo.js ../asheo-patched        # after -> "Premium active - all features unlocked."
+node harness/asheo_trace.js ../asheo-patched  # the premium.get answer
+```
+
 ## Repo layout
 
 ```
@@ -339,6 +392,7 @@ web/
   test.js                 end to end test, including a real Chrome check
 
 tools/
+  asheo_unlock.js         unlock the premium tier of the Asheo extension
   fix_guards.js           recompute + rewrite self-defending guard constants
   audit_guards.js         verify every guard constant in a tree
   emit_patches.js         find the premium gate of any build (new profiles)
@@ -353,6 +407,8 @@ tools/
 harness/                  puppeteer verification (headless Chrome)
   final.js                the main check: locks, disabled inputs, badge, nag
   probe.js                check that the anti-tamper probe sees official bytes
+  asheo.js                load the Asheo popup and report what is locked
+  asheo_trace.js          trace the popup's runtime messages and answers
   clickall.js             click every button so all panels/modals mount
   readtrace.js            read a trace the background wrote to chrome.storage
   shot.js                 screenshot the UI
